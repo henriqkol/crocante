@@ -224,7 +224,8 @@ function topo({ voltar = null, titulo = "", direita = "" } = {}) {
     const sem = estado.plano ? L.semanaDoDia(estado.plano.inicio, hoje()) : null;
     return `<header class="topo">
       <a href="#hoje" class="logo" aria-label="Crocante, início"><img src="icons/crocante-192.png" alt=""><span>CROCANTE<b>*</b></span></a>
-      <div class="topo-acoes">${sem != null ? `<span class="etiqueta">SEM ${sem + 1}/4</span>` : ""}
+      <div class="topo-acoes">${sem != null && appInstalado() ? `<span class="etiqueta">SEM ${sem + 1}/4</span>` : ""}
+        ${appInstalado() ? "" : `<button class="redondo" data-acao="instalarApp" aria-label="Instalar o app">${ICONE_INSTALAR}</button>`}
         <a href="#avisos" class="redondo" aria-label="Avisos">${ICONE_SINO}</a>${avatarHtml()}</div></header>`;
   }
   return `<header class="topo">
@@ -273,6 +274,7 @@ async function telaHoje() {
       <a href="#grana"><span class="rotulo">SOBRA PREVISTA</span><span class="numero ${r.dentro ? "vermelho" : ""}">${R0(r.sobra)}</span><span class="pequeno">de ${R0(estado.plano.orcamento)} no mês</span></a>
       <a href="#compras/${prox ? indiceCompra(prox) : 1}"><span class="rotulo ${prox && prox.data <= L.addDias(h, 1) ? "alerta" : ""}">${proxTxt}</span><span class="numero">${prox ? R0(L.somaItens(prox.itens)) : "✓"}</span><span class="pequeno">${prox ? `${esc(nomeCompra(prox).toLowerCase())} · ${pl(prox.itens.length, "item", "itens")}` : "tudo comprado"}</span></a>
     </section>
+    ${cartaoInstalar()}
     <a class="contorno" href="#ideias" style="text-decoration:none"><span class="rotulo">NADA AGRADA HOJE?</span><span>Sorteie uma combinação ou veja os 30 pratos, cafés e doces ↗</span></a>
   </div>`;
 }
@@ -877,7 +879,7 @@ async function telaCasa() {
       <div class="pilulas" style="margin-top:12px">${[["auto", "Do aparelho"], ["claro", "Claro"], ["escuro", "Escuro"]].map(([k, n]) => `<button class="pilula" aria-pressed="${tema === k}" data-acao="tema" data-tema="${k}">${n}</button>`).join("")}</div></section>
     ${casas.length > 1 ? `<section><div class="secao-titulo"><h2 class="h3">Suas casas</h2></div><div class="lista">${casas.map((c) => `<button class="linha" data-acao="trocarCasa" data-id="${c.id}" ${c.id === estado.casa.casa_id ? "disabled" : ""}>
       <span class="ponto ${c.id === estado.casa.casa_id ? "" : "vazio-p"}"></span><span class="cresce">${esc(c.nome)}</span><span class="rotulo">${c.id === estado.casa.casa_id ? "ATUAL" : "ABRIR"}</span></button>`).join("")}</div></section>` : ""}
-    <div class="pilulas"><a class="pilula" href="#avisos">Avisos</a><button class="pilula" data-acao="compartilharApp">Mandar o link do app</button></div>
+    <div class="pilulas"><a class="pilula" href="#avisos">Avisos</a>${appInstalado() ? "" : `<button class="pilula" data-acao="instalarApp">Instalar o app</button>`}<button class="pilula" data-acao="compartilharApp">Mandar o link do app</button></div>
     <button class="link-mono" data-acao="sair">SAIR DA CONTA</button>
     <p class="pequeno mute">Crocante ${VERSAO} · <a href="privacidade.html">Privacidade</a></p>
   </div>`;
@@ -1033,6 +1035,53 @@ acoes.testarAviso = async (el) => {
   el.disabled = false;
 };
 
+// ------------------------------------------------------------------ INSTALAR O APP
+// O Chrome avisa (beforeinstallprompt) quando o app pode ser instalado; guardamos o aviso para o botão.
+let pedidoInstalar = null;
+const ICONE_INSTALAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>`;
+const appInstalado = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  pedidoInstalar = e;
+  if (estado.email && estado.config && !appInstalado() && ["hoje", "casa"].includes(rotaAtual().nome) && folha.hidden) desenhar();
+});
+window.addEventListener("appinstalled", () => { pedidoInstalar = null; avisar("Crocante instalado"); if (estado.config) desenhar(); });
+function cartaoInstalar() {
+  if (appInstalado()) return "";
+  try { if (localStorage.getItem("instalarDispensado") === "1") return ""; } catch { /* segue */ }
+  return `<section class="contorno" id="cartaoInstalar" style="flex-direction:row;align-items:center;gap:14px">
+    <img src="icons/crocante-192.png" alt="" width="48" height="48" style="border-radius:11px;flex:0 0 auto">
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-weight:600">Instale o Crocante</span>
+      <span class="pequeno">Abre em tela cheia, com ícone próprio, e recebe os lembretes.</span></span>
+    <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+      <button class="pilula cheia" data-acao="instalarApp">Instalar</button>
+      <button class="link-mono" style="padding:4px 0 0;font-size:10px;align-self:flex-end" data-acao="dispensarInstalar">AGORA NÃO</button></span>
+  </section>`;
+}
+acoes.instalarApp = async () => {
+  if (pedidoInstalar) {
+    pedidoInstalar.prompt();
+    const { outcome } = await pedidoInstalar.userChoice.catch(() => ({}));
+    pedidoInstalar = null;
+    if (outcome !== "accepted") avisar("Instalação cancelada. Dá para instalar depois pelo botão no topo.");
+    return desenhar();
+  }
+  const passos = ehIOS()
+    ? [["Abra no Safari", "No iPhone, só o Safari instala apps da web. Se estiver em outro navegador, copie o endereço e abra no Safari."],
+       ["Toque em Compartilhar", "O quadrado com a seta para cima, na barra de baixo (ou de cima, no iPad)."],
+       ["Adicionar à Tela de Início", "Role a lista e toque nessa opção. Depois em Adicionar."],
+       ["Abra pelo ícone", "Os lembretes só funcionam com o app aberto pelo ícone da tela de início."]]
+    : /android/i.test(navigator.userAgent)
+      ? [["Abra o menu do Chrome", "Os três pontinhos ⋮ no canto de cima."], ["Instalar app", "Ou “Adicionar à tela inicial”. Confirme em Instalar."], ["Abra pelo ícone", "O Crocante abre em tela cheia, como um app."]]
+      : [["Use o Chrome ou o Edge", "No computador, procure o ícone de instalar no fim da barra de endereço."], ["Ou pelo menu", "Menu ⋮ → Transmitir, salvar e compartilhar → Instalar página como app."]];
+  abrirFolha(`<h2 class="h2">Instalar o Crocante</h2>
+    <ol class="passos lista">${passos.map(([t, d], i) => `<li class="linha" style="align-items:flex-start"><span class="numero m vermelho" style="flex:0 0 30px">${i + 1}</span>
+      <span class="cresce"><span style="font-weight:600">${esc(t)}</span><span class="pequeno">${esc(d)}</span></span></li>`).join("")}</ol>
+    <button class="pilula" data-acao="fecharFolha">Entendi</button>`);
+};
+acoes.dispensarInstalar = () => { try { localStorage.setItem("instalarDispensado", "1"); } catch { /* segue */ } $("#cartaoInstalar")?.remove(); };
+
 // ------------------------------------------------------------------ LOGIN
 const LOGO_GOOGLE = `<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
 function telaLogin(msg = "") {
@@ -1049,6 +1098,7 @@ function telaLogin(msg = "") {
       ${msg ? `<div class="contorno alerta pequeno">${msg}</div>` : ""}
       <button class="botao cheio botao-google" type="button" data-acao="entrarGoogle">${LOGO_GOOGLE}Continuar com Google</button>
       <p class="pequeno" style="text-align:center">Sem senha nova. Usamos só seu nome, e-mail e foto da conta Google. Recebeu convite? Entre com o e-mail convidado.</p>
+      ${appInstalado() ? "" : `<button class="link-mono" style="align-self:center" data-acao="instalarApp">INSTALAR O APP NO CELULAR</button>`}
     </div></main>`;
 }
 acoes.entrarGoogle = async (el) => {
