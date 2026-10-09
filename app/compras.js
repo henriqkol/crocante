@@ -1,0 +1,95 @@
+// Modelo das compras do mês, para 2 pessoas (o app multiplica pelo número de pessoas da casa).
+//
+// Duas listas:
+//   • MES   — compra do mês (sábado antes da semana 1): só o que dura o mês inteiro fora da geladeira.
+//   • SEMANA — compra de cada sábado, véspera do preparo de domingo: só o que aquela semana usa,
+//              para não lotar o congelador. `q` = quantidade em cada uma das 4 semanas.
+//
+// local: c = congelador · g = geladeira e pão · d = despensa · h = higiene e limpeza
+// congela: item que já vem congelado e ocupa espaço no congelador (conta no medidor da semana)
+// busca: palavras que aparecem na nota fiscal (sem acento, maiúsculas). A primeira lista que bate vence,
+//        por isso itens mais específicos (batata palha, creme de leite) vêm antes dos genéricos (batata, leite).
+
+export const SEMANA = [
+  { chave: "peito", nome: "Peito de frango", un: "kg", preco: 20, local: "c", q: [0.55, 1.6, 1.3, 1.1], busca: ["PEITO", "FILE (DE )?(FGO|FRANGO)", "FGO FILE"] },
+  { chave: "sobrecoxa", nome: "Sobrecoxa", un: "kg", preco: 14, local: "c", q: [1.5, 0, 0, 1.5], congela: true, busca: ["SOBRE ?COXA", "\\bCOXA"] },
+  { chave: "carne", nome: "Carne moída", un: "kg", preco: 38, local: "c", q: [0.75, 0.5, 0.5, 0.75], busca: ["MOID[AO]", "PATINHO", "ACEM"] },
+  { chave: "linguica", nome: "Linguiça toscana", un: "kg", preco: 22, local: "c", q: [0.5, 0.25, 0.5, 0.25], busca: ["LINGUICA", "\\bLING\\b"] },
+  { chave: "nuggets", nome: "Nuggets de frango (300 g)", un: "pct", preco: 15, local: "c", q: [1, 1, 0, 1], congela: true, coringa: true, busca: ["NUGGET"] },
+  { chave: "batata-frita", nome: "Batata pré-frita (1 kg)", un: "pct", preco: 20, local: "c", q: [1, 0, 1, 0], congela: true, busca: ["PRE ?FRITA", "PALITO", "BATATA CONG", "MC ?CAIN"] },
+  { chave: "salsicha", nome: "Salsicha", un: "kg", preco: 12, local: "g", q: [0.25, 0.25, 0.25, 0.25], busca: ["SALSICHA"] },
+  { chave: "presunto", nome: "Presunto fatiado", un: "kg", preco: 36, local: "g", q: [0.15, 0.15, 0.1, 0.1], busca: ["PRESUNTO", "APRESUNTADO"] },
+  { chave: "ovos", nome: "Ovos (bandeja de 30)", un: "bandeja", preco: 19, local: "g", q: [1, 1, 0, 1], busca: ["\\bOVOS?\\b"] },
+  { chave: "pao", nome: "Pão de forma", un: "pct", preco: 9, local: "g", q: [1, 1, 1, 1], busca: ["PAO (DE )?FORMA", "PAO FORM"] },
+  { chave: "tortilha", nome: "Tortilha / wrap", un: "pct", preco: 10, local: "g", q: [1, 0, 1, 0], busca: ["TORTILHA", "\\bWRAP", "RAP ?10"] },
+  { chave: "leite", nome: "Leite (1 L)", un: "caixas", preco: 5, local: "g", q: [3, 2, 3, 2], busca: ["\\bLEITE (INT|DESN|SEMI|UHT|LONGA|1 ?L)", "^LEITE\\b"] },
+  { chave: "mussarela", nome: "Mussarela em bloco", un: "kg", preco: 45, local: "g", q: [0.25, 0.25, 0.25, 0.25], coringa: true, busca: ["MUSSARELA", "MUCARELA", "MUZZARELA", "MOZZARELLA", "QUEIJO MUS"] },
+  { chave: "requeijao", nome: "Requeijão", un: "pote", preco: 8, local: "g", q: [1, 0, 1, 0], busca: ["REQUEIJAO", "\\bREQ\\b"] },
+  { chave: "creme-leite", nome: "Creme de leite", un: "caixinhas", preco: 4, local: "g", q: [2, 2, 2, 1], busca: ["CREME (DE )?LEITE", "\\bCR ?LEITE"] },
+  { chave: "batata", nome: "Batata inglesa", un: "kg", preco: 5, local: "g", q: [1, 2, 1, 1], busca: ["BATATA (INGLESA|LAVADA|KG|ESCOVADA)", "^BATATA\\b(?!.*(PALHA|FRITA|CHIPS|PALITO))"] },
+  { chave: "limao", nome: "Limão (mousse)", un: "kg", preco: 6, local: "g", q: [0, 1, 0, 0], busca: ["LIMAO"] },
+  { chave: "refri", nome: "Refrigerante 2 L", un: "garrafa", preco: 8, local: "g", q: [1, 1, 1, 1], busca: ["REFRIG", "\\bCOCA", "GUARANA", "PEPSI", "FANTA", "SODA"] },
+];
+
+export const MES = [
+  { chave: "arroz", nome: "Arroz (5 kg)", un: "pct", preco: 24, local: "d", qtd: 2, busca: ["ARROZ"] },
+  { chave: "feijao", nome: "Feijão carioca (1 kg)", un: "pct", preco: 7.5, local: "d", qtd: 4, busca: ["FEIJAO"] },
+  { chave: "macarrao", nome: "Macarrão (500 g)", un: "pct", preco: 4.5, local: "d", qtd: 6, busca: ["MACARRAO", "ESPAGUETE", "PENNE", "PARAFUSO", "\\bMAC\\b"] },
+  { chave: "farinha-trigo", nome: "Farinha de trigo (1 kg)", un: "pct", preco: 5, local: "d", qtd: 1, busca: ["(FARINHA|FAR) (DE )?TRIGO"] },
+  { chave: "farinha-rosca", nome: "Farinha de rosca ou panko (500 g)", un: "pct", preco: 8, local: "d", qtd: 1, busca: ["ROSCA", "PANKO"] },
+  { chave: "farinha-mandioca", nome: "Farinha de mandioca (1 kg)", un: "pct", preco: 7, local: "d", qtd: 1, busca: ["MANDIOCA"] },
+  { chave: "flocao", nome: "Flocão de milho (500 g)", un: "pct", preco: 3, local: "d", qtd: 3, busca: ["FLOCAO", "CUSCUZ", "FLOCOS? (DE )?MILHO (P|PARA)"] },
+  { chave: "corn-flakes", nome: "Corn flakes sem açúcar (500 g)", un: "cx", preco: 12, local: "d", qtd: 1, busca: ["CORN ?FLAKES", "SUCRILHOS"] },
+  { chave: "polvilho", nome: "Polvilho azedo (500 g)", un: "pct", preco: 7, local: "d", qtd: 1, busca: ["POLVILHO (AZEDO|DOCE)"] },
+  { chave: "margarina", nome: "Margarina (500 g)", un: "pote", preco: 9, local: "d", qtd: 1, busca: ["MARGARINA", "QUALY", "DORIANA"] },
+  { chave: "parmesao", nome: "Parmesão ralado (100 g)", un: "pct", preco: 8, local: "d", qtd: 2, busca: ["PARMESAO", "QUEIJO RALADO"] },
+  { chave: "leite-condensado", nome: "Leite condensado", un: "caixinhas", preco: 7, local: "d", qtd: 5, busca: ["CONDENSADO", "\\bMOCA\\b"] },
+  { chave: "bacon", nome: "Bacon em cubos (250 g)", un: "pct", preco: 12.5, local: "c", qtd: 1, congela: true, busca: ["BACON"] },
+  { chave: "ketchup", nome: "Ketchup (1 kg)", un: "un", preco: 14, local: "d", qtd: 2, coringa: true, busca: ["KETCHUP", "CATCHUP"] },
+  { chave: "batata-palha", nome: "Batata palha (400 g)", un: "pct", preco: 18, local: "d", qtd: 3, coringa: true, busca: ["PALHA"] },
+  { chave: "maionese", nome: "Maionese (500 g)", un: "un", preco: 10, local: "d", qtd: 2, busca: ["MAIONESE"] },
+  { chave: "mostarda", nome: "Mostarda", un: "un", preco: 6, local: "d", qtd: 1, busca: ["MOSTARDA"] },
+  { chave: "barbecue", nome: "Molho barbecue", un: "un", preco: 9, local: "d", qtd: 1, busca: ["BARBECUE", "\\bBBQ\\b"] },
+  { chave: "molho-tomate", nome: "Molho de tomate liso (sachê)", un: "un", preco: 3, local: "d", qtd: 6, busca: ["MOLHO (DE )?TOMATE", "MOL TOM", "POMAROLA", "EXTRATO"] },
+  { chave: "oleo", nome: "Óleo de soja (900 ml)", un: "un", preco: 8, local: "d", qtd: 3, busca: ["\\bOLEO"] },
+  { chave: "sal", nome: "Sal (1 kg)", un: "pct", preco: 3, local: "d", qtd: 1, busca: ["^SAL\\b", "\\bSAL (REF|MOIDO|1 ?KG)"] },
+  { chave: "temperos", nome: "Temperos: alho em pó, páprica, orégano, caldo", un: "kit", preco: 15, local: "d", qtd: 1, busca: ["TEMPERO", "\\bCALDO", "PAPRICA", "OREGANO", "ALHO"] },
+  { chave: "acucar", nome: "Açúcar (5 kg)", un: "pct", preco: 20, local: "d", qtd: 1, busca: ["ACUCAR"] },
+  { chave: "cafe", nome: "Café (500 g)", un: "pct", preco: 25, local: "d", qtd: 2, busca: ["^CAFE\\b", "\\bCAFE (TORR|EXTRA|TRAD|PO)"] },
+  { chave: "maracuja", nome: "Suco concentrado de maracujá (500 ml)", un: "un", preco: 10, local: "d", qtd: 1, busca: ["MARACUJA"] },
+  { chave: "chocolate-po", nome: "Chocolate em pó (200 g)", un: "un", preco: 10, local: "d", qtd: 1, busca: ["CHOC(OLATE)? (EM )?PO", "CACAU"] },
+  { chave: "achocolatado", nome: "Achocolatado (700 g)", un: "un", preco: 12, local: "d", qtd: 1, busca: ["ACHOCOLATADO", "NESCAU", "TODDY"] },
+  { chave: "chocolate-barra", nome: "Chocolate em barra (90 g)", un: "un", preco: 7, local: "d", qtd: 1, busca: ["CHOC(OLATE)? (EM )?BARRA", "\\bBARRA CHOC", "TABLETE"] },
+  { chave: "maisena", nome: "Biscoito maisena", un: "pct", preco: 5, local: "d", qtd: 3, busca: ["MAISENA", "MAIZENA"] },
+  { chave: "recheado", nome: "Biscoito recheado ou wafer", un: "pct", preco: 4, local: "d", qtd: 4, busca: ["RECHEADO", "WAFER"] },
+  { chave: "pipoca", nome: "Milho de pipoca (500 g)", un: "pct", preco: 5, local: "d", qtd: 2, busca: ["PIPOCA"] },
+  { chave: "salgadinho", nome: "Salgadinho ou biscoito de polvilho", un: "pct", preco: 6, local: "d", qtd: 1, busca: ["SALGADINHO", "BISC(OITO)? (DE )?POLVILHO", "DORITOS", "CHEETOS", "FANDANGOS"] },
+  { chave: "amendoim", nome: "Amendoim (500 g)", un: "pct", preco: 10, local: "d", qtd: 1, busca: ["AMENDOIM"] },
+  { chave: "suco-po", nome: "Suco em pó", un: "envelopes", preco: 1.5, local: "d", qtd: 10, busca: ["SUCO (EM )?PO", "\\bTANG\\b", "\\bFRESH\\b", "CLIGHT"] },
+  { chave: "papel-hig", nome: "Papel higiênico (12 rolos)", un: "pct", preco: 20, local: "h", qtd: 2, busca: ["PAPEL HIG", "\\bP ?HIG"] },
+  { chave: "sabonete", nome: "Sabonete", un: "un", preco: 2.5, local: "h", qtd: 6, busca: ["SABONETE", "\\bSAB (BARRA|LIQ)"] },
+  { chave: "shampoo", nome: "Shampoo (dura mais de 1 mês)", un: "un", preco: 15, local: "h", qtd: 1, busca: ["SHAMPOO", "\\bSH\\b"] },
+  { chave: "condicionador", nome: "Condicionador (dura mais de 1 mês)", un: "un", preco: 15, local: "h", qtd: 1, busca: ["CONDICIONADOR", "\\bCOND\\b"] },
+  { chave: "creme-dental", nome: "Creme dental", un: "un", preco: 5, local: "h", qtd: 3, busca: ["(CREME|CR) DENTAL", "COLGATE", "SORRISO", "CLOSE ?UP"] },
+  { chave: "desodorante", nome: "Desodorante", un: "un", preco: 12, local: "h", qtd: 2, busca: ["DESOD"] },
+  { chave: "escova", nome: "Escova de dente", un: "un", preco: 5, local: "h", qtd: 2, busca: ["ESCOVA"] },
+  { chave: "fio-dental", nome: "Fio dental", un: "un", preco: 6, local: "h", qtd: 1, busca: ["FIO DENTAL"] },
+  { chave: "detergente", nome: "Detergente", un: "un", preco: 2.5, local: "h", qtd: 5, busca: ["DETERGENTE", "\\bDET\\b", "\\bYPE\\b"] },
+  { chave: "sabao-liquido", nome: "Sabão líquido para roupa (3 L)", un: "un", preco: 30, local: "h", qtd: 1, busca: ["SABAO", "LAVA ROUPAS?"] },
+  { chave: "amaciante", nome: "Amaciante (2 L)", un: "un", preco: 12, local: "h", qtd: 1, busca: ["AMACIANTE"] },
+  { chave: "sanitaria", nome: "Água sanitária (2 L)", un: "un", preco: 6, local: "h", qtd: 2, busca: ["SANITARIA", "CANDIDA", "\\bQBOA\\b"] },
+  { chave: "desinfetante", nome: "Desinfetante (2 L)", un: "un", preco: 10, local: "h", qtd: 1, busca: ["DESINFETANTE", "PINHO"] },
+  { chave: "multiuso", nome: "Multiuso", un: "un", preco: 5, local: "h", qtd: 2, busca: ["MULTIUSO", "\\bVEJA\\b"] },
+  { chave: "esponjas", nome: "Esponjas", un: "pct", preco: 6, local: "h", qtd: 1, busca: ["ESPONJA"] },
+  { chave: "saco-lixo", nome: "Saco de lixo", un: "pct", preco: 10, local: "h", qtd: 2, busca: ["SACO (P(ARA)? |DE )?LIXO", "\\bSC LIXO"] },
+  { chave: "pano", nome: "Pano de chão ou flanela", un: "un", preco: 6, local: "h", qtd: 1, busca: ["\\bPANO\\b", "FLANELA"] },
+  { chave: "papel-toalha", nome: "Papel toalha (2 rolos)", un: "pct", preco: 7, local: "h", qtd: 1, busca: ["PAPEL TOALHA", "TOALHA PAPEL", "PAP TOALHA"] },
+  { chave: "saquinhos", nome: "Saquinhos para congelar", un: "pct", preco: 8, local: "h", qtd: 1, busca: ["FREEZER", "SAQUINHO", "SACO (P(ARA)? )?CONGELAR", "\\bZIP"] },
+];
+
+export const LOCAIS = {
+  c: "Vai para o congelador",
+  g: "Geladeira e pão",
+  d: "Despensa",
+  h: "Higiene e limpeza",
+};
