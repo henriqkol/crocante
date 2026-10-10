@@ -17,10 +17,17 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
   - pg_cron `crocante-lembretes` (`1 17,21,22,23,0 * * *` UTC = 14h, 18h, 19h, 20h, 21h em Brasília) chama `/crocante/lembretes`.
 - `tests/` — `node --test tests/logica.test.mjs`.
 
+## Notas fiscais
+- Uma compra pode ter várias notas; `pago` = soma de `conta_no_plano`. O comparativo (`telaComparar`) junta as linhas de todas as notas da compra.
+- Notas salvas reabrem pela lista "Notas desta compra" (tela Compras) para trocar vínculos, tirar do plano ou apagar; o rascunho em revisão fica em `localStorage.crocRascunho` até salvar.
+- Casamento nota × lista (`casarNota`): primeiro o que a casa ensinou (`croc_aprendizado`: texto da nota sem números/unidades → chave do item, `nome:<NOME>` ou `fora`), depois as regras `busca`. Sem par: `sugerirItens` mostra os mais parecidos (abreviações, marcas no meio, trigramas). Toda escolha manual (`manual: true`) vira aprendizado ao salvar.
+
 ## Regras do plano
-- Compras por semana para não lotar o congelador; o medidor = bases do domingo (`PREPARO[w].frz`) + itens `congela` da semana + 1 (bacon do mês). Capacidade em `croc_config.congelador`.
+- Pratos só mudam de dia dentro da mesma semana ("Mudar de dia" troca dois lugares do `croc_cardapio`), então as compras continuam cobertas.
+- Preparo de domingo calculado pelo cardápio real (`preparoDaSemana`): bases de cada prato vêm de `RECEITAS[id].pre` (`basesDoPrato`); cozidos: domingo fresco, até quarta geladeira, quinta–sábado congelador; bolinhas cruas até terça na geladeira; empanados sempre no congelador; sobrecoxa/linguiça vêm congeladas da compra. Descongelar = véspera do dia do prato. "Separe" e as levas continuam do plano original (os pratos da semana são os mesmos).
+- Medidor do congelador = saquinhos calculados + itens `congela` da semana + 1 (bacon do mês). Capacidade em `croc_config.congelador`.
 - Pessoas multiplica as quantidades (kg em passos de 50 g, unidades para cima). Vale para planos novos.
-- Lembretes na véspera (19h/20h/21h, escolha de cada aparelho): descongelar (`PREPARO[w].desc` pelo dia da semana), mercado de amanhã, preparo de domingo. 14h: escanear nota da compra de hoje. 18h: jantar (desligado por padrão). Orçamento: aviso único por plano quando a sobra prevista fica < R$ 30 ou negativa (após salvar compra).
+- Lembretes na véspera (19h/20h/21h, escolha de cada aparelho): descongelar (`descongelarParaAmanha`, pelo cardápio real), mercado de amanhã, preparo de domingo. 14h: escanear nota da compra de hoje. 18h: jantar (desligado por padrão). Orçamento: aviso único por plano quando a sobra prevista fica < R$ 30 ou negativa (após salvar compra).
 
 ## Visual
 Design system GranDom (fontes Doto, Space Grotesk, Space Mono em `app/fonts`). Tema escuro padrão, claro pelo aparelho ou em Casa → Aparência. Ícone: caixinha de batata frita em pixel (`app/icons`).

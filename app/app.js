@@ -67,7 +67,7 @@ async function fn(rota, corpo = {}) {
 const estado = {
   email: null, nome: "", foto: null,
   casa: null, config: null, plano: null, compras: [], cardapio: [], notas: [],
-  moradores: null, sorteio: null, passos: {}, rascunho: null, filtroPratos: "todos",
+  moradores: null, sorteio: null, passos: {}, rascunho: null, filtroPratos: "todos", aprendidos: {},
 };
 const compraPorId = (id) => estado.compras.find((c) => c.id === id);
 const nomeCompra = (c) => (c.tipo === "mes" ? "Compra do mês" : `Semana ${c.semana}`);
@@ -117,7 +117,9 @@ async function carregarTudo() {
   estado.compras.forEach((c) => delete c.croc_itens);
   estado.cardapio = cardapio;
   const ids = estado.compras.map((c) => c.id);
-  estado.notas = ids.length ? await q(sb.from("croc_notas").select("id, compra_id, conta_no_plano, total, emitente, criado_em, criado_por").in("compra_id", ids)) : [];
+  estado.notas = ids.length ? await q(sb.from("croc_notas").select("id, compra_id, conta_no_plano, total, emitente, emissao, criado_em, criado_por, linhas").in("compra_id", ids).order("criado_em")) : [];
+  const ap = await q(sb.from("croc_aprendizado").select("texto, destino"));
+  estado.aprendidos = Object.fromEntries(ap.map((a) => [a.texto, a.destino]));
   estado.compras.forEach((c) => { c.notas = estado.notas.filter((n) => n.compra_id === c.id).length; });
   ouvirCarrinho();
 }
@@ -269,7 +271,9 @@ async function telaHoje() {
       </section>`;
   }
   const proxTxt = prox ? (prox.data === h ? "HOJE · MERCADO" : prox.data === L.addDias(h, 1) ? "AMANHÃ · MERCADO" : `MERCADO · ${L.DIAS_CURTOS[L.diaSemana(prox.data)]} ${L.dataCurta(prox.data)}`) : "COMPRAS";
+  const rasc = estado.rascunho && compraPorId(estado.rascunho.compra_id);
   app.innerHTML = `${topo()}<div class="conteudo">${corpo}
+    ${rasc ? `<a class="contorno alerta" href="#nota" style="text-decoration:none"><span class="rotulo alerta">NOTA EM REVISÃO · NÃO SALVA</span><span>${esc(estado.rascunho.emitente ?? "Nota fiscal")} · ${esc(nomeCompra(rasc).toLowerCase())}. Continuar ↗</span></a>` : ""}
     <section class="grade">
       <a href="#grana"><span class="rotulo">SOBRA PREVISTA</span><span class="numero ${r.dentro ? "vermelho" : ""}">${R0(r.sobra)}</span><span class="pequeno">de ${R0(estado.plano.orcamento)} no mês</span></a>
       <a href="#compras/${prox ? indiceCompra(prox) : 1}"><span class="rotulo ${prox && prox.data <= L.addDias(h, 1) ? "alerta" : ""}">${proxTxt}</span><span class="numero">${prox ? R0(L.somaItens(prox.itens)) : "✓"}</span><span class="pequeno">${prox ? `${esc(nomeCompra(prox).toLowerCase())} · ${pl(prox.itens.length, "item", "itens")}` : "tudo comprado"}</span></a>
@@ -290,7 +294,8 @@ async function telaSemana(n) {
   const prep = PREPARO[w];
   const compra = estado.compras.find((c) => c.tipo === "semana" && c.semana === w + 1);
   const domingo = L.addDias(p.inicio, w * 7);
-  const congel = L.congeladorDaSemana(w, compra?.itens);
+  const congel = L.congeladorDaSemana(w, compra?.itens, planoParaLogica());
+  const calc = L.preparoDaSemana(p.inicio, w, estado.cardapio);
   const dias = Array.from({ length: 7 }, (_, d) => L.addDias(domingo, d));
   const bloco = (titulo, itens) => itens?.length ? `<div class="caixa"><span class="rotulo">${titulo}</span><ul class="simples">${itens.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
   app.innerHTML = `${topo()}<div class="conteudo">
@@ -316,8 +321,10 @@ async function telaSemana(n) {
     </div>
     <details class="mais"><summary class="link-mono">O QUE SEPARAR, GUARDAR E DESCONGELAR ▾</summary>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
-        ${bloco("SEPARE NO DOMINGO", prep.separe)}${bloco("VAI PARA A GELADEIRA", prep.gel)}${bloco("VAI PARA O CONGELADOR", prep.frz)}
-        ${bloco("DESCONGELAR NA VÉSPERA", prep.desc.map((d) => `${d.quando}: ${d.o}`))}${bloco("CONFIRA QUE TEM EM CASA", prep.conf)}
+        <p class="pequeno">Calculado pelo cardápio desta semana: se um prato muda de dia, a geladeira, o congelador e o descongelar mudam junto.</p>
+        ${bloco("SEPARE NO DOMINGO", prep.separe)}${bloco("USA NO PRÓPRIO DOMINGO (FAÇA ANTES DA REFEIÇÃO)", calc.fresco)}
+        ${bloco("VAI PARA A GELADEIRA", calc.gel)}${bloco(`VAI PARA O CONGELADOR · ${calc.saquinhos} ${calc.saquinhos === 1 ? "SAQUINHO" : "SAQUINHOS"}`, calc.frz)}
+        ${bloco("DESCONGELAR NA VÉSPERA", calc.desc.map((d) => `${d.quando}: ${d.o}`))}${bloco("CONFIRA QUE TEM EM CASA", calc.conf)}
       </div></details>
     <section class="lista">
       ${dias.map((dia, d) => {
@@ -331,7 +338,7 @@ async function telaSemana(n) {
           </span></div>`;
       }).join("")}
     </section>
-    <p class="pequeno">Enjoou de algo no dia? Abra o prato e toque em “Trocar prato”. A base que sobrar vai para o congelador e entra em outra semana.</p>
+    <p class="pequeno">Quer comer um prato em outro dia? Abra o prato e toque em “Mudar de dia”: ele troca de lugar com outro da mesma semana, e as compras continuam cobertas.</p>
   </div>`;
 }
 acoes.irSemana = (el) => ir(`#semana/${el.dataset.n}`);
@@ -343,6 +350,22 @@ async function telaPrato(id, dia, ref) {
   const feitos = estado.passos[id] ?? new Set();
   const nada = D.pre.length === 1 && D.pre[0].startsWith("Nada");
   const voltar = dia ? "#semana" : "#ideias/pratos";
+  let guarda = "";
+  if (dia && estado.plano) {
+    const w = L.semanaDoDia(estado.plano.inicio, dia);
+    if (w != null) {
+      const d = L.diasEntre(L.addDias(estado.plano.inicio, 7 * w), dia);
+      const linhas = L.basesDoPrato(id).map((b) => {
+        const g = L.guardaDaBase(b, d), nome = maiuscula(L.BASES[b].nome);
+        if (g === "fresco") return `${nome}: feita no preparo de hoje, antes ${ref === "almoco" ? "do almoço" : "do jantar"}`;
+        if (g === "geladeira") return `${nome}: na geladeira desde domingo`;
+        if (g === "comprado") return `${nome}: vem do congelador da compra, descongele na noite anterior (${L.DIAS[(d + 6) % 7]})`;
+        if (L.BASES[b].tipo === "empanado") return `${nome}: direto do congelador, sem descongelar`;
+        return `${nome}: no congelador, descongele na noite anterior (${L.DIAS[(d + 6) % 7]})`;
+      });
+      if (linhas.length) guarda = `<div class="caixa"><span class="rotulo">ONDE ESTÁ A BASE</span><ul class="simples">${linhas.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    }
+  }
   app.innerHTML = `${topo({ voltar, titulo: `PRATO ${P.id} · ${esc(CAT[P.cat].toUpperCase())}` })}<div class="conteudo">
     <div class="cabeca"><h1 class="h1">${esc(P.nome)}</h1>
       <div class="pilulas">${[TIPO[P.tipo], P.tempo, `${estado.config?.pessoas ?? 2} pessoas`].map((t) => `<span class="etiqueta">${esc(t.toUpperCase())}</span>`).join("")}</div>
@@ -351,6 +374,7 @@ async function telaPrato(id, dia, ref) {
       <div><span class="rotulo">PRONTO DO DOMINGO</span><span style="font-size:14px">${esc(nada ? D.pre[0] : D.pre.join(" · "))}</span></div>
       <div><span class="rotulo">SEPARE NA HORA</span><span style="font-size:14px">${esc(D.ing.join(" · "))}</span></div>
     </section>
+    ${guarda}
     <section style="display:flex;flex-direction:column;gap:6px">
       <div style="display:flex;justify-content:space-between;align-items:center"><div class="eyebrow">PASSO A PASSO</div><span class="mono pequeno">${feitos.size}/${D.p.length}</span></div>
       <ol class="passos lista">${D.p.map((t, i) => `<li><button class="linha" type="button" data-acao="passo" data-prato="${id}" data-i="${i}" aria-pressed="${feitos.has(i)}" style="align-items:flex-start">
@@ -360,7 +384,7 @@ async function telaPrato(id, dia, ref) {
     <div class="papel quadrado" style="flex-direction:row;gap:10px;align-items:flex-start"><span class="asterisco" aria-hidden="true">*</span><span style="font-size:14px"><b style="font-weight:600">Crocância:</b> ${esc(P.crocancia.toLowerCase())}.</span></div>
   </div>
   ${dia ? `<div class="rodape-fixo" style="flex-direction:row">
-    <button class="pilula" data-acao="trocarPrato" data-dia="${dia}" data-ref="${ref}">Trocar prato</button>
+    <button class="pilula" data-acao="mudarDia" data-dia="${dia}" data-ref="${ref}">Mudar de dia</button>
     <a class="botao" style="flex:1" href="#hoje">Comemos!</a></div>` : ""}`;
 }
 acoes.passo = (el) => {
@@ -369,27 +393,36 @@ acoes.passo = (el) => {
   s.has(i) ? s.delete(i) : s.add(i);
   desenhar();
 };
-acoes.trocarPrato = (el) => {
+const NOME_REF = { almoco: "almoço", jantar: "jantar" };
+/** Mudar de dia: o prato troca de lugar com outro da mesma semana (as compras continuam cobertas). */
+acoes.mudarDia = (el) => {
   const { dia, ref } = el.dataset;
-  const atual = pratoDo(dia, ref)?.prato;
-  const grupos = Object.entries(CAT).map(([k, nome]) => {
-    const ps = PRATOS.filter((p) => p && p.cat === k);
-    return `<div><div class="secao-titulo"><span class="h3">${esc(nome)}</span></div><div class="lista">${ps.map((p) => `<button class="linha" type="button" data-acao="escolherPrato" data-prato="${p.id}" data-dia="${dia}" data-ref="${ref}">
-      <span class="cresce"><span>${esc(p.nome)}${p.id === atual ? ` <span class="etiqueta">ATUAL</span>` : ""}</span><span class="pequeno">${esc(TIPO[p.tipo])} · ${esc(p.tempo)}</span></span></button>`).join("")}</div></div>`;
-  }).join("");
-  abrirFolha(`<h2 class="h2">Trocar o ${ref === "almoco" ? "almoço" : "jantar"} de ${esc(dataLonga(dia))}</h2>
-    <p class="pequeno">Prefira pratos que usam a mesma base pronta do domingo. O resto fica no congelador para outra semana.</p>${grupos}`);
+  const w = L.semanaDoDia(estado.plano.inicio, dia);
+  const domingo = L.addDias(estado.plano.inicio, 7 * w);
+  const atual = pratoDo(dia, ref);
+  const opcoes = [];
+  for (let d = 0; d < 7; d++) for (const r of ["almoco", "jantar"]) {
+    const data = L.addDias(domingo, d);
+    if (data === dia && r === ref) continue;
+    const x = pratoDo(data, r);
+    if (x) opcoes.push({ data, r, d, x });
+  }
+  abrirFolha(`<h2 class="h2">Mudar ${esc(PRATOS[atual.prato].nome.toLowerCase())} de dia</h2>
+    <p class="pequeno">Escolha o dia. Os dois pratos trocam de lugar e o preparo, a geladeira, o congelador e os lembretes de descongelar se ajustam.</p>
+    <div class="lista">${opcoes.map((o) => `<button class="linha" data-acao="trocarDias" data-de="${dia}/${ref}" data-para="${o.data}/${o.r}">
+      <span style="width:58px;flex:0 0 auto;display:flex;flex-direction:column;gap:2px"><span class="rotulo ${o.data === hoje() ? "alerta" : ""}">${L.DIAS_CURTOS[o.d]} ${L.dataCurta(o.data)}</span><span class="rotulo">${NOME_REF[o.r].toUpperCase()}</span></span>
+      <span class="cresce"><span>${esc(PRATOS[o.x.prato].nome)}</span><span class="pequeno">vai para ${esc(L.DIAS[L.diaSemana(dia)])}, ${NOME_REF[ref]}</span></span></button>`).join("")}</div>`);
 };
-acoes.escolherPrato = async (el) => {
-  const { dia, ref } = el.dataset, prato = Number(el.dataset.prato);
+acoes.trocarDias = async (el) => {
+  const [diaA, refA] = el.dataset.de.split("/"), [diaB, refB] = el.dataset.para.split("/");
+  const a = pratoDo(diaA, refA), b = pratoDo(diaB, refB);
   try {
-    const linha = pratoDo(dia, ref);
-    if (linha) await q(sb.from("croc_cardapio").update({ prato }).eq("id", linha.id));
-    else await q(sb.from("croc_cardapio").insert({ plano_id: estado.plano.id, data: dia, refeicao: ref, prato }));
-    if (linha) linha.prato = prato; else estado.cardapio.push({ data: dia, refeicao: ref, prato });
+    await q(sb.from("croc_cardapio").update({ prato: b.prato }).eq("id", a.id));
+    await q(sb.from("croc_cardapio").update({ prato: a.prato }).eq("id", b.id));
+    [a.prato, b.prato] = [b.prato, a.prato];
     fecharFolha();
-    avisar(`Trocado: ${PRATOS[prato].nome}`);
-    ir(`#prato/${prato}/${dia}/${ref}`);
+    avisar(`${PRATOS[b.prato].nome} agora é ${L.DIAS[L.diaSemana(diaB)]}, ${NOME_REF[refB]}`);
+    ir(`#prato/${b.prato}/${diaB}/${refB}`);
   } catch (e) { avisar(e.message, true); }
 };
 
@@ -402,7 +435,7 @@ async function telaCompras(n) {
   const total = L.somaItens(c.itens);
   const noCarrinho = L.somaItens(c.itens.filter((i) => i.marcado));
   const ehSemana = c.tipo === "semana";
-  const ocupado = ehSemana ? L.congeladorDaSemana(c.semana - 1, c.itens) : 0;
+  const ocupado = ehSemana ? L.congeladorDaSemana(c.semana - 1, c.itens, planoParaLogica()) : 0;
   const cap = estado.config.congelador;
   const grupos = Object.keys(LOCAIS).map((loc) => [loc, c.itens.filter((i) => i.local === loc)]).filter(([, its]) => its.length);
   const sub = ehSemana
@@ -426,7 +459,7 @@ async function telaCompras(n) {
     ${ehSemana ? `<section class="caixa" aria-label="Espaço no congelador">
       <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="rotulo">CONGELADOR NESTA SEMANA</span><span class="mono" style="font-size:13px">${ocupado}/${cap} espaços</span></div>
       <div class="celulas ${ocupado >= cap - 1 ? "lotado" : ""}" style="--n:${cap}" aria-hidden="true">${Array.from({ length: cap }, (_, i) => `<span class="${i < ocupado ? "cheia" : ""}"></span>`).join("")}</div>
-      <span class="pequeno">${notaFreezer} Bases do domingo, o que já vem congelado e o bacon do mês.</span></section>`
+      <span class="pequeno">${notaFreezer} Bases que o cardápio desta semana manda congelar, o que já vem congelado e o bacon do mês.</span></section>`
     : `<div class="caixa pequeno">Só o que dura o mês todo fora da geladeira. O bacon vem em cubos e ocupa 1 espaço no congelador até o fim do mês.</div>`}
     ${grupos.map(([loc, its]) => `<section>
       <div class="secao-titulo"><h2 class="h3">${esc(LOCAIS[loc])}</h2><span class="mono pequeno">${R(L.somaItens(its))}</span></div>
@@ -438,9 +471,13 @@ async function telaCompras(n) {
       </label>`).join("")}</div></section>`).join("")}
     <div class="pilulas"><button class="pilula" data-acao="novoItem" data-compra="${c.id}">+ Adicionar item</button>
       ${c.pago == null ? `<button class="pilula" data-acao="pagarSemNota" data-compra="${c.id}">Já paguei, sem nota</button>` : `<button class="pilula" data-acao="desfazerPago" data-compra="${c.id}">Reabrir compra</button>`}</div>
+    ${notasDaCompra(c.id).length ? `<section><div class="secao-titulo"><h2 class="h3">Notas desta compra</h2><span class="mono pequeno">${R(c.pago ?? 0)}</span></div>
+      <div class="lista">${notasDaCompra(c.id).map((n) => { const fora = (n.linhas ?? []).filter((l) => l.removido).length, sem = (n.linhas ?? []).filter((l) => !l.removido && !l.item_id).length; return `<button class="linha" data-acao="abrirNota" data-id="${n.id}">
+        <span class="cresce"><span>${esc(n.emitente ?? "Nota fiscal")}</span><span class="pequeno">${n.emissao ? L.dataCurta(n.emissao.slice(0, 10)) + " · " : ""}${pl((n.linhas ?? []).length, "item", "itens")}${fora ? ` · ${fora} fora do plano` : ""}${sem ? ` · <span style="color:var(--signal-2)">${sem} sem par</span>` : ""}</span></span>
+        <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="valor" style="color:var(--fg)">${R(n.conta_no_plano)}</span><span class="rotulo">REVISAR ↗</span></span></button>`; }).join("")}</div></section>` : ""}
     <p class="pequeno"><span class="asterisco" style="font-size:15px">*</span> coringa, não pode faltar. O que um morador marca aparece na hora para o outro.</p>
   </div>
-  <div class="rodape-fixo"><a class="botao" href="#escanear/${c.id}">Escanear a nota desta compra</a></div>`;
+  <div class="rodape-fixo"><a class="botao" href="#escanear/${c.id}">${notasDaCompra(c.id).length ? "Adicionar outra nota" : "Escanear a nota desta compra"}</a></div>`;
 }
 acoes.irCompra = (el) => ir(`#compras/${el.dataset.n}`);
 function itemPorId(id) { for (const c of estado.compras) { const i = c.itens.find((x) => x.id === id); if (i) return [c, i]; } return [null, null]; }
@@ -529,7 +566,7 @@ acoes.salvarPagoManual = async (el) => {
 };
 acoes.desfazerPago = async (el) => {
   const c = compraPorId(el.dataset.compra);
-  if (c.notas) return avisar("Esta compra tem nota salva. Para mudar o valor, escaneie de novo ou ajuste os itens.", true);
+  if (notasDaCompra(c.id).length) return avisar("Esta compra tem nota salva. Para mudar o valor, revise ou apague a nota na lista abaixo.", true);
   try { await q(sb.from("croc_compras").update({ pago: null, feita_em: null }).eq("id", c.id)); c.pago = null; desenhar(); }
   catch (e) { avisar(e.message, true); }
 };
@@ -623,13 +660,30 @@ async function telaGrana() {
 // ------------------------------------------------------------------ ESCANEAR NOTA
 function compraSugerida() {
   const h = hoje();
+  const doDia = estado.compras.filter((c) => c.data === h || c.data === L.addDias(h, -1));
+  if (doDia.length) return doDia.sort((a, b) => indiceCompra(b) - indiceCompra(a))[0];
   const abertas = estado.compras.filter((c) => c.pago == null);
   return abertas.filter((c) => c.data <= L.addDias(h, 1)).sort((a, b) => b.data.localeCompare(a.data) || indiceCompra(b) - indiceCompra(a))[0] ?? abertas[0] ?? estado.compras[0];
 }
+// Rascunho da nota em revisão: fica guardado no aparelho até ser salvo (o app pode fechar no meio)
+const CHAVE_RASCUNHO = "crocRascunho";
+function guardarRascunho() {
+  try { if (estado.rascunho) localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify(estado.rascunho)); else localStorage.removeItem(CHAVE_RASCUNHO); } catch { /* sem armazenamento */ }
+}
+function recuperarRascunho() {
+  try {
+    const r = JSON.parse(localStorage.getItem(CHAVE_RASCUNHO) ?? "null");
+    if (r && compraPorId(r.compra_id)) estado.rascunho = r; else localStorage.removeItem(CHAVE_RASCUNHO);
+  } catch { /* sem rascunho */ }
+}
+const notasDaCompra = (id, menos = null) => estado.notas.filter((n) => n.compra_id === id && n.id !== menos);
+
 async function telaEscanear(compraId) {
   const c = compraPorId(compraId) ?? compraSugerida();
-  app.innerHTML = `${topo({ voltar: "#compras", titulo: "ESCANEAR NOTA" })}<div class="conteudo">
-    <div class="pilulas rolagem" role="group" aria-label="Qual compra">${estado.compras.map((x) => `<button class="pilula" aria-pressed="${x.id === c.id}" data-acao="escolherCompraScan" data-id="${x.id}">${esc(nomeCompra(x))}${x.pago != null ? " ✓" : ""}</button>`).join("")}</div>
+  const jaTem = notasDaCompra(c.id);
+  app.innerHTML = `${topo({ voltar: `#compras/${indiceCompra(c)}`, titulo: "ESCANEAR NOTA" })}<div class="conteudo">
+    <div class="pilulas rolagem" role="group" aria-label="Qual compra">${estado.compras.map((x) => `<button class="pilula" aria-pressed="${x.id === c.id}" data-acao="escolherCompraScan" data-id="${x.id}">${esc(nomeCompra(x))}${notasDaCompra(x.id).length ? ` · ${notasDaCompra(x.id).length} nota${notasDaCompra(x.id).length > 1 ? "s" : ""}` : ""}</button>`).join("")}</div>
+    ${jaTem.length ? `<div class="caixa pequeno">Esta compra já tem ${pl(jaTem.length, "nota", "notas")} (${esc(jaTem.map((n) => n.emitente ?? "mercado").join(", "))}). A nova nota soma com ${jaTem.length > 1 ? "elas" : "ela"} no comparativo.</div>` : ""}
     <div class="camera"><video muted playsinline></video><div class="mira" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <span class="estado"><span class="ponto"></span><span id="estadoCamera">LIGANDO A CÂMERA</span></span></div>
     <p class="pequeno" style="text-align:center">Aponte para o QR code no rodapé da nota fiscal (NFC-e). Ele traz todos os itens e preços direto da SEFAZ.</p>
@@ -664,110 +718,170 @@ async function processarNota(texto, compraId) {
     const { nota } = await fn("/nfce", { texto });
     if (nota.chave) {
       const ja = await q(sb.from("croc_notas").select("id").eq("chave", nota.chave).limit(1));
-      if (ja.length) throw new Error("Essa nota já foi salva antes.");
+      if (ja.length) throw new Error("Essa nota já foi salva antes. Para revisar, abra a compra e toque na nota.");
     }
     const c = compraPorId(compraId);
-    const linhas = L.casarNota(c.itens, nota.itens.map((i) => ({ descricao: i.descricao, valor: i.valor_total, qtd: i.quantidade, un: i.unidade })));
-    estado.rascunho = { compra_id: c.id, chave: nota.chave, emitente: nota.nome_emitente, emissao: nota.emissao, total: nota.valor_pago ?? nota.valor_total, linhas, passados: [] };
+    const linhas = L.casarNota(c.itens, nota.itens.map((i) => ({ descricao: i.descricao, valor: i.valor_total, qtd: i.quantidade, un: i.unidade })), estado.aprendidos);
+    estado.rascunho = { nota_id: null, compra_id: c.id, chave: nota.chave, emitente: nota.nome_emitente, emissao: nota.emissao, total: nota.valor_pago ?? nota.valor_total, linhas, passados: [] };
+    guardarRascunho();
     ir("#nota");
   } catch (e) {
     app.innerHTML = `${topo({ voltar: "#escanear", titulo: "NOTA" })}<div class="vazio"><strong>Não consegui ler a nota</strong>${esc(e.message)}
       <a class="pilula" href="#escanear/${compraId}">Tentar de novo</a><button class="pilula" data-acao="pagarSemNota" data-compra="${compraId}">Digitar o total</button></div>`;
   }
 }
+/** Abre uma nota já salva para revisar (trocar vínculos, tirar o que não é do plano). */
+acoes.abrirNota = async (el) => {
+  try {
+    const n = await q(sb.from("croc_notas").select("*").eq("id", el.dataset.id).single());
+    estado.rascunho = { nota_id: n.id, compra_id: n.compra_id, chave: n.chave, emitente: n.emitente, emissao: n.emissao, total: n.total, linhas: n.linhas ?? [], passados: [] };
+    guardarRascunho();
+    ir("#nota");
+  } catch (e) { avisar(e.message, true); }
+};
 
 // ------------------------------------------------------------------ REVISAR NOTA
 function telaNota() {
   const r = estado.rascunho;
   if (!r) return ir("#escanear");
   const c = compraPorId(r.compra_id);
-  const itemNome = (id) => c.itens.find((i) => i.id === id)?.nome;
+  const itemNome = (id) => c.itens.find((i) => i.id === id)?.nome ?? "item que saiu da lista";
   const pendentes = r.linhas.filter((l) => !l.item_id && !l.chave && !l.removido).length;
   const cmp = L.compararNota(c.itens, r.linhas);
   const data = r.emissao ? L.dataCurta(r.emissao.slice(0, 10)) : "";
-  app.innerHTML = `${topo({ voltar: "#escanear", titulo: `NOTA ${data ? `· ${data} ` : ""}· ${r.linhas.length} ITENS` })}<div class="conteudo">
-    <div class="cabeca"><h1 class="h1">Confira o que é do plano</h1>
-      <p class="lead">${esc(r.emitente ?? "")}${r.emitente ? ". " : ""}Remova o que não faz parte do plano: esses itens não contam no orçamento.</p>
-      <button class="pilula" data-acao="trocarCompraNota" style="justify-content:space-between"><span><span class="rotulo">COMPARAR COM </span>${esc(nomeCompra(c))} · ${L.dataCurta(c.data)}</span><span class="mono pequeno">Trocar</span></button></div>
-    ${pendentes ? `<div class="papel quadrado"><span style="font-size:15px"><b style="font-weight:600">${pl(pendentes, "item não está", "itens não estão")} na lista do mês.</b> Remova se ${pendentes === 1 ? "foi compra" : "foram compras"} à parte.</span>
-      <button class="botao escuro" style="align-self:flex-start;min-height:44px" data-acao="removerForaPlano">Remover ${pendentes === 1 ? "o item" : `os ${pendentes}`}</button></div>` : ""}
-    <section class="lista">${r.linhas.map((l, i) => `<div class="linha" style="${l.removido ? "opacity:.55" : ""}">
-      <span class="cresce" style="gap:3px"><span class="mono" style="font-size:12px;${l.removido ? "text-decoration:line-through" : ""}">${esc(l.descricao)}</span>
-        ${l.item_id ? `<span class="pequeno">= ${esc(itemNome(l.item_id))}</span>`
-          : l.chave ? `<span class="pequeno">Do plano, mas de outra compra · <button class="link-mono" style="padding:0;font-size:11px" data-acao="ligarLinha" data-i="${i}">LIGAR A UM ITEM</button></span>`
-          : `<span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="etiqueta alerta">FORA DO PLANO</span>${l.removido ? "" : `<button class="link-mono" style="padding:0;font-size:11px" data-acao="ligarLinha" data-i="${i}">LIGAR A UM ITEM</button>`}</span>`}
-      </span>
+  const outras = notasDaCompra(c.id, r.nota_id);
+  const linhaHtml = (l, i) => {
+    let info;
+    if (l.removido) info = `<span class="etiqueta">NÃO É DO PLANO</span>`;
+    else if (l.item_id) info = `<span class="pequeno">= ${esc(itemNome(l.item_id))}${l.origem === "aprendido" ? ` <span class="mute">· aprendido</span>` : l.manual ? ` <span class="mute">· escolhido por vocês</span>` : ""}</span>`;
+    else {
+      const sug = L.sugerirItens(l.descricao, c.itens, 2);
+      info = `<span style="display:flex;flex-direction:column;gap:6px">${l.chave ? `<span class="pequeno">Do plano, mas de outra compra</span>` : `<span class="etiqueta alerta" style="align-self:flex-start">NÃO IDENTIFICADO</span>`}
+        ${sug.length ? `<span class="pilulas" style="gap:6px">${sug.map((s) => `<button class="pilula" style="min-height:36px;padding:0 12px;font-size:13px" data-acao="ligarA" data-i="${i}" data-id="${s.item.id}">${esc(s.item.nome)}? <span class="mono mute" style="font-size:10px">${s.nivel.toUpperCase()}</span></button>`).join("")}</span>` : ""}</span>`;
+    }
+    return `<div class="linha" style="align-items:flex-start;${l.removido ? "opacity:.6" : ""}">
+      <span class="cresce" style="gap:4px"><span class="mono" style="font-size:12px;${l.removido ? "text-decoration:line-through" : ""}">${esc(l.descricao)}</span>${info}
+        <button class="link-mono" style="padding:2px 0 0;font-size:11px" data-acao="trocarVinculo" data-i="${i}">${l.item_id || l.removido ? "TROCAR" : "ESCOLHER ITEM"}</button></span>
       <span class="valor" style="${l.removido ? "text-decoration:line-through" : "color:var(--fg)"}">${R(l.valor)}</span>
-      <button class="redondo" data-acao="alternarLinha" data-i="${i}" aria-label="${l.removido ? "Devolver" : "Remover"} ${esc(l.descricao)}">${l.removido ? ICONE_DESFAZER : ICONE_X}</button>
-    </div>`).join("")}</section>
+    </div>`;
+  };
+  app.innerHTML = `${topo({ voltar: r.nota_id ? `#compras/${indiceCompra(c)}` : "#escanear", titulo: `NOTA ${data ? `· ${data} ` : ""}· ${r.linhas.length} ITENS` })}<div class="conteudo">
+    <div class="cabeca"><h1 class="h1">${r.nota_id ? "Revisar nota salva" : "Confira o que é do plano"}</h1>
+      <p class="lead">${esc(r.emitente ?? "")}${r.emitente ? ". " : ""}Ligue cada linha ao item certo da lista. O que não é do plano não conta no orçamento. O app aprende com as correções.</p>
+      <button class="pilula" data-acao="trocarCompraNota" style="justify-content:space-between"><span><span class="rotulo">COMPARAR COM </span>${esc(nomeCompra(c))} · ${L.dataCurta(c.data)}</span><span class="mono pequeno">Trocar</span></button>
+      ${outras.length ? `<p class="pequeno">Esta compra tem mais ${pl(outras.length, "nota", "notas")}: ${esc(outras.map((n) => n.emitente ?? "mercado").join(", "))}. O comparativo junta todas.</p>` : ""}</div>
+    ${pendentes ? `<div class="papel quadrado"><span style="font-size:15px"><b style="font-weight:600">${pl(pendentes, "linha não foi identificada", "linhas não foram identificadas")}.</b> Escolha o item certo ou marque como fora do plano.</span>
+      <button class="botao escuro" style="align-self:flex-start;min-height:44px" data-acao="removerForaPlano">Marcar ${pendentes === 1 ? "como fora" : `as ${pendentes} como fora`} do plano</button></div>` : ""}
+    <section class="lista">${r.linhas.map(linhaHtml).join("")}</section>
+    ${r.nota_id ? `<button class="link-mono" data-acao="apagarNota">APAGAR ESTA NOTA</button>` : ""}
   </div>
   <div class="rodape-fixo">
     <div style="display:flex;justify-content:space-between;align-items:flex-end">
       <span style="display:flex;flex-direction:column;gap:4px"><span class="rotulo">CONTA NO PLANO</span><span class="numero m vermelho">${R(cmp.contaNoPlano).replace("R$ ", "R$")}</span></span>
-      <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="rotulo">REMOVIDO</span><span class="mono pequeno">${R(cmp.removidoTotal)}</span></span>
+      <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="rotulo">FORA DO PLANO</span><span class="mono pequeno">${R(cmp.removidoTotal)}</span></span>
     </div>
     <a class="botao" href="#comparar">Comparar com a lista ↗</a></div>`;
 }
-acoes.alternarLinha = (el) => { const l = estado.rascunho.linhas[Number(el.dataset.i)]; l.removido = !l.removido; desenhar(); };
-acoes.removerForaPlano = () => { estado.rascunho.linhas.forEach((l) => { if (!l.item_id && !l.chave) l.removido = true; }); desenhar(); };
+function mudarLinha(i, muda) {
+  Object.assign(estado.rascunho.linhas[i], muda, { manual: true, origem: null });
+  guardarRascunho(); fecharFolha(); desenhar();
+}
+acoes.removerForaPlano = () => {
+  estado.rascunho.linhas.forEach((l) => { if (!l.item_id && !l.chave && !l.removido) Object.assign(l, { removido: true, manual: true }); });
+  guardarRascunho(); desenhar();
+};
+acoes.trocarVinculo = (el) => {
+  const r = estado.rascunho, c = compraPorId(r.compra_id), i = Number(el.dataset.i), l = r.linhas[i];
+  const sug = L.sugerirItens(l.descricao, c.itens, 3);
+  const idsSug = new Set(sug.map((s) => s.item.id));
+  const botaoItem = (it, extra = "") => `<button class="linha" data-acao="ligarA" data-i="${i}" data-id="${it.id}"><span class="cresce"><span>${esc(it.nome)}${it.id === l.item_id ? ` <span class="etiqueta">ATUAL</span>` : ""}</span><span class="pequeno">${esc(L.qtdTexto(it.qtd, it.unidade))} · ${R(L.valorItem(it))}${extra}</span></span></button>`;
+  abrirFolha(`<h2 class="h2">Qual item da lista é este?</h2><p class="mono pequeno">${esc(l.descricao)} · ${R(l.valor)}</p>
+    ${sug.length ? `<div><span class="rotulo">MAIS PARECIDOS</span><div class="lista" style="margin-top:6px">${sug.map((s) => botaoItem(s.item, ` · semelhança ${s.nivel}`)).join("")}</div></div>` : ""}
+    <button class="linha" data-acao="foraDoPlano" data-i="${i}"><span class="cresce"><span>Não é do plano</span><span class="pequeno">Não conta no orçamento (compra à parte)</span></span></button>
+    <div><span class="rotulo">TODOS OS ITENS DA ${esc(nomeCompra(c).toUpperCase())}</span><div class="lista" style="margin-top:6px">${c.itens.filter((it) => !idsSug.has(it.id)).map((it) => botaoItem(it)).join("")}</div></div>
+    <p class="pequeno">A escolha vale para as próximas notas: quando aparecer “${esc(L.chaveTexto(l.descricao))}”, o app já liga sozinho.</p>`);
+};
+acoes.ligarA = (el) => mudarLinha(Number(el.dataset.i), { item_id: el.dataset.id, removido: false });
+acoes.foraDoPlano = (el) => mudarLinha(Number(el.dataset.i), { item_id: null, removido: true });
 acoes.trocarCompraNota = () => {
   abrirFolha(`<h2 class="h2">Comparar com qual compra?</h2><div class="lista">${estado.compras.map((c) => `<button class="linha" data-acao="usarCompraNota" data-id="${c.id}">
-    <span class="cresce"><span>${esc(nomeCompra(c))}</span><span class="pequeno">${L.dataCurta(c.data)}${c.pago != null ? " · já tem valor pago" : ""}</span></span></button>`).join("")}</div>`);
+    <span class="cresce"><span>${esc(nomeCompra(c))}</span><span class="pequeno">${L.dataCurta(c.data)}${notasDaCompra(c.id).length ? ` · ${pl(notasDaCompra(c.id).length, "nota", "notas")}` : ""}</span></span></button>`).join("")}</div>`);
 };
 acoes.usarCompraNota = (el) => {
   const r = estado.rascunho, c = compraPorId(el.dataset.id);
   r.compra_id = c.id;
-  r.linhas = L.casarNota(c.itens, r.linhas.map(({ descricao, valor, qtd, un, removido }) => ({ descricao, valor, qtd, un, removido })));
-  fecharFolha(); desenhar();
+  // as escolhas manuais de "fora do plano" ficam; os vínculos são refeitos com os itens da nova compra
+  r.linhas = L.casarNota(c.itens, r.linhas.map(({ descricao, valor, qtd, un, removido, manual }) => ({ descricao, valor, qtd, un, removido: manual ? removido : false })), estado.aprendidos);
+  guardarRascunho(); fecharFolha(); desenhar();
 };
-acoes.ligarLinha = (el) => {
-  const r = estado.rascunho, c = compraPorId(r.compra_id), i = Number(el.dataset.i);
-  abrirFolha(`<h2 class="h2">Qual item da lista é este?</h2><p class="mono pequeno">${esc(r.linhas[i].descricao)}</p>
-    <div class="lista">${c.itens.map((it) => `<button class="linha" data-acao="ligarA" data-i="${i}" data-id="${it.id}"><span class="cresce"><span>${esc(it.nome)}</span><span class="pequeno">${esc(L.qtdTexto(it.qtd, it.unidade))} · ${R(L.valorItem(it))}</span></span></button>`).join("")}</div>`);
+acoes.apagarNota = async () => {
+  const r = estado.rascunho;
+  if (!confirm("Apagar esta nota? O valor pago da compra é recalculado.")) return;
+  try {
+    await q(sb.from("croc_notas").delete().eq("id", r.nota_id));
+    estado.notas = estado.notas.filter((n) => n.id !== r.nota_id);
+    await recalcularPago(r.compra_id);
+    estado.rascunho = null; guardarRascunho();
+    avisar("Nota apagada");
+    ir(`#compras/${indiceCompra(compraPorId(r.compra_id))}`);
+  } catch (e) { avisar(e.message, true); }
 };
-acoes.ligarA = (el) => { const l = estado.rascunho.linhas[Number(el.dataset.i)]; l.item_id = el.dataset.id; l.removido = false; fecharFolha(); desenhar(); };
+/** Valor pago da compra = soma do que cada nota dela conta no plano (sem notas, volta a ficar em aberto). */
+async function recalcularPago(compraId) {
+  const c = compraPorId(compraId);
+  const ns = notasDaCompra(compraId);
+  const pago = ns.length ? L.arred2(ns.reduce((s, n) => s + Number(n.conta_no_plano), 0)) : null;
+  await q(sb.from("croc_compras").update({ pago, feita_em: pago == null ? null : new Date().toISOString() }).eq("id", compraId));
+  c.pago = pago; c.notas = ns.length;
+}
 
-// ------------------------------------------------------------------ COMPARATIVO
+// ------------------------------------------------------------------ COMPARATIVO (junta todas as notas da compra)
 function telaComparar() {
   const r = estado.rascunho;
   if (!r) return ir("#escanear");
   const c = compraPorId(r.compra_id);
-  const cmp = L.compararNota(c.itens, r.linhas);
+  const outras = notasDaCompra(c.id, r.nota_id);
+  const linhasOutras = outras.flatMap((n) => (n.linhas ?? []).map((l) => ({ ...l, de_outra: true })));
+  const cmp = L.compararNota(c.itens, [...linhasOutras, ...r.linhas]);
+  const desta = L.compararNota(c.itens, r.linhas);
   const proxima = c.tipo === "semana" && c.semana < 4 ? estado.compras.find((x) => x.tipo === "semana" && x.semana === c.semana + 1) : null;
-  // fechamento: esta compra passa a valer o que já foi pago em outras notas dela + o que esta nota conta no plano
-  const pagoAntes = estado.notas.filter((n) => n.compra_id === c.id).reduce((s, n) => s + Number(n.conta_no_plano), 0);
+  const pagoOutras = outras.reduce((s, n) => s + Number(n.conta_no_plano), 0);
   const antes = resumo();
-  const depois = L.resumoOrcamento(estado.compras.map((x) => (x.id === c.id ? { ...x, pago: L.arred2(pagoAntes + cmp.contaNoPlano) } : x)), Number(estado.plano.orcamento));
+  const depois = L.resumoOrcamento(estado.compras.map((x) => (x.id === c.id ? { ...x, pago: L.arred2(pagoOutras + desta.contaNoPlano) } : x)), Number(estado.plano.orcamento));
   const max = Math.max(0.01, ...cmp.comprados.map((x) => Math.abs(x.diferenca)));
-  const congel = c.tipo === "semana" ? L.congeladorDaSemana(c.semana - 1, c.itens) : null;
+  const congel = c.tipo === "semana" ? L.congeladorDaSemana(c.semana - 1, c.itens, planoParaLogica()) : null;
   const subiu = cmp.comprados.filter((x) => x.diferenca > 0.5).slice(0, 2).map((x) => x.nome.toLowerCase());
-  app.innerHTML = `${topo({ voltar: "#nota", titulo: `${esc(nomeCompra(c).toUpperCase())} · PLANEJADO X NOTA` })}<div class="conteudo">
-    <section class="cabeca"><div class="eyebrow">${cmp.comprados.length} DE ${c.itens.length} ITENS COMPRADOS</div>
+  const nNotas = outras.length + 1;
+  app.innerHTML = `${topo({ voltar: "#nota", titulo: `${esc(nomeCompra(c).toUpperCase())} · PLANEJADO X ${nNotas > 1 ? `${nNotas} NOTAS` : "NOTA"}` })}<div class="conteudo">
+    <section class="cabeca"><div class="eyebrow">${cmp.comprados.length} DE ${c.itens.length} ITENS COMPRADOS${nNotas > 1 ? ` · ${nNotas} NOTAS` : ""}</div>
       <span class="numero g ${cmp.diferenca > 0 ? "vermelho" : ""}">${cmp.diferenca > 0 ? "+" : cmp.diferenca < 0 ? "−" : ""}${R(Math.abs(cmp.diferenca)).replace("R$ ", "R$")}</span>
-      <p class="lead">${cmp.diferenca > 0 ? "acima" : cmp.diferenca < 0 ? "abaixo" : "igual ao"} do planejado para o que você comprou${cmp.planejadoComprado ? ` (${cmp.diferenca >= 0 ? "+" : "−"}${Math.abs((cmp.diferenca / cmp.planejadoComprado) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)` : ""}</p>
-      <div class="grade"><div><span class="rotulo">PLANEJADO</span><span class="mono" style="font-size:17px">${R(cmp.planejadoComprado)}</span></div><div><span class="rotulo">NA NOTA</span><span class="mono" style="font-size:17px">${R(cmp.pagoComprado)}</span></div></div>
+      <p class="lead">${cmp.diferenca > 0 ? "acima" : cmp.diferenca < 0 ? "abaixo" : "igual ao"} do planejado para o que você comprou${cmp.planejadoComprado ? ` (${cmp.diferenca >= 0 ? "+" : "−"}${Math.abs((cmp.diferenca / cmp.planejadoComprado) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)` : ""}${nNotas > 1 ? ", somando todas as notas desta compra" : ""}</p>
+      <div class="grade"><div><span class="rotulo">PLANEJADO</span><span class="mono" style="font-size:17px">${R(cmp.planejadoComprado)}</span></div><div><span class="rotulo">${nNotas > 1 ? "NAS NOTAS" : "NA NOTA"}</span><span class="mono" style="font-size:17px">${R(cmp.pagoComprado)}</span></div></div>
     </section>
-    ${cmp.faltou.length ? `<section class="contorno alerta"><span class="rotulo alerta">FALTOU NA NOTA · ${cmp.faltou.length}</span>
+    ${cmp.faltou.length ? `<section class="contorno alerta"><span class="rotulo alerta">FALTOU ${nNotas > 1 ? "NAS NOTAS" : "NA NOTA"} · ${cmp.faltou.length}</span>
       ${cmp.faltou.map((f) => { const passado = r.passados.includes(f.id); return `<div style="display:flex;gap:12px;align-items:center"><span style="flex:1">${esc(f.nome)} · <span class="mono pequeno">${R(f.planejado)}</span></span>
-        ${proxima ? (passado ? `<span class="etiqueta">NA SEM. ${proxima.semana} ✓</span>` : `<button class="pilula cheia" data-acao="passarItem" data-id="${f.id}" data-para="${proxima.id}">Passar p/ sem. ${proxima.semana}</button>`) : ""}</div>`; }).join("")}</section>` : ""}
+        ${proxima ? (passado ? `<span class="etiqueta">NA SEM. ${proxima.semana} ✓</span>` : `<button class="pilula cheia" data-acao="passarItem" data-id="${f.id}" data-para="${proxima.id}">Passar p/ sem. ${proxima.semana}</button>`) : ""}</div>`; }).join("")}
+      <p class="pequeno">Ainda vai escanear outra nota desta compra? Salve esta e adicione a próxima: os itens dela saem daqui.</p></section>` : ""}
     ${cmp.comprados.length ? `<section style="display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 class="h2">Item a item</h2><span class="rotulo">− BARATO · CARO +</span></div>
       <div class="lista">${cmp.comprados.map((x) => { const w = Math.max(4, (Math.abs(x.diferenca) / max) * 100); const sobe = x.diferenca > 0; return `<div style="display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--line)">
         <div style="display:flex;justify-content:space-between;gap:10px"><span style="font-size:15px">${esc(x.nome)}</span><span class="mono" style="font-size:13px;color:${sobe ? "var(--signal-2)" : "var(--fg-dim)"}">${sobe ? "+" : x.diferenca < 0 ? "−" : ""}${R(Math.abs(x.diferenca))}</span></div>
         <div style="display:flex;align-items:center;gap:10px"><div class="diverge" aria-hidden="true"><div>${!sobe ? `<i style="width:${w}%;background:var(--fg-dim)"></i>` : ""}</div><span class="meio"></span><div>${sobe ? `<i style="width:${w}%;background:var(--signal)"></i>` : ""}</div></div>
         <span class="mono" style="font-size:11px;color:var(--fg-mute);white-space:nowrap">${R(x.planejado)} → ${R(x.pago)}</span></div></div>`; }).join("")}</div></section>` : ""}
+    ${cmp.extras.length ? `<section class="caixa"><span class="rotulo">CONTAM NO PLANO SEM PAR NA LISTA · ${R(cmp.extrasTotal)}</span><ul class="simples">${cmp.extras.map((l) => `<li>${esc(l.descricao)} · ${R(l.valor)}</li>`).join("")}</ul>
+      <a class="link-mono" href="#nota">LIGAR A UM ITEM OU TIRAR DO PLANO</a></section>` : ""}
     <section class="grade escura">
-      <div><span class="rotulo">FORA DO PLANO</span><span class="mono riscado" style="font-size:15px">${R(cmp.removidoTotal)}</span><span class="pequeno">${pl(cmp.removidos.length, "item removido", "itens removidos")}</span></div>
+      <div><span class="rotulo">FORA DO PLANO</span><span class="mono riscado" style="font-size:15px">${R(cmp.removidoTotal)}</span><span class="pequeno">${pl(cmp.removidos.length, "item", "itens")}</span></div>
       ${congel != null ? `<div><span class="rotulo">CONGELADOR</span><span class="mono" style="font-size:15px">${congel}/${estado.config.congelador} espaços</span><span class="pequeno">depois do preparo de domingo</span></div>`
-        : `<div><span class="rotulo">EXTRAS NO PLANO</span><span class="mono" style="font-size:15px">${R(cmp.extrasTotal)}</span><span class="pequeno">${pl(cmp.extras.length, "item sem par", "itens sem par")} na lista</span></div>`}
+        : `<div><span class="rotulo">ESTA NOTA</span><span class="mono" style="font-size:15px">${R(desta.contaNoPlano)}</span><span class="pequeno">conta no plano</span></div>`}
     </section>
     <section class="papel"><span class="rotulo">FECHAMENTO PREVISTO DO MÊS</span>
       <span class="numero" style="font-size:40px">${R(depois.previsto).replace("R$ ", "R$")}</span>
-      <p style="font-size:15px">${depois.dentro ? `Ainda dentro dos ${R(estado.plano.orcamento)}.` : `<b style="font-weight:600">Passa dos ${R(estado.plano.orcamento)}.</b>`} A sobra foi de <b style="font-weight:600">${R(antes.sobra)}</b> para <b style="font-weight:600" class="vermelho">${R(depois.sobra)}</b>.</p>
+      <p style="font-size:15px">${depois.dentro ? `Ainda dentro dos ${R(estado.plano.orcamento)}.` : `<b style="font-weight:600">Passa dos ${R(estado.plano.orcamento)}.</b>`} A sobra ${r.nota_id ? "fica em" : `foi de <b style="font-weight:600">${R(antes.sobra)}</b> para`} <b style="font-weight:600" class="vermelho">${R(depois.sobra)}</b>.</p>
       ${subiu.length ? `<p class="pequeno">${esc(maiuscula(subiu.join(" e ")))} ${subiu.length > 1 ? "puxaram" : "puxou"} a alta. Vale comparar marcas e o preço por quilo na próxima.</p>` : ""}
     </section>
   </div>
-  <div class="rodape-fixo"><button class="botao" data-acao="salvarNota">Salvar ${esc(nomeCompra(c).toLowerCase())}</button></div>`;
+  <div class="rodape-fixo"><button class="botao" data-acao="salvarNota">${r.nota_id ? "Salvar revisão" : `Salvar nota da ${esc(nomeCompra(c).toLowerCase())}`}</button></div>`;
 }
 acoes.passarItem = async (el) => {
   const [, it] = itemPorId(el.dataset.id);
@@ -776,27 +890,51 @@ acoes.passarItem = async (el) => {
     const novo = await q(sb.from("croc_itens").insert({ compra_id: para.id, chave: it.chave, nome: it.nome, qtd: it.qtd, unidade: it.unidade, preco: it.preco, local: it.local, coringa: it.coringa, congela: it.congela, ordem: it.ordem }).select().single());
     if (!para.itens.some((x) => x.id === novo.id)) para.itens.push(novo);
     estado.rascunho.passados.push(it.id);
-    desenhar(); avisar(`${it.nome} vai para a semana ${para.semana}`);
+    guardarRascunho(); desenhar(); avisar(`${it.nome} vai para a semana ${para.semana}`);
   } catch (e) { avisar(e.message, true); }
 };
+/** Grava o que a casa corrigiu ou confirmou à mão, para as próximas notas. */
+async function aprender(c, linhas) {
+  const novos = new Map();
+  for (const l of linhas.filter((x) => x.manual)) {
+    const texto = L.chaveTexto(l.descricao);
+    if (!texto) continue;
+    if (l.removido) novos.set(texto, "fora");
+    else if (l.item_id) { const it = c.itens.find((i) => i.id === l.item_id); if (it) novos.set(texto, L.destinoDoItem(it)); }
+  }
+  if (!novos.size) return;
+  const linhasAp = [...novos].map(([texto, destino]) => ({ texto, destino, criado_por: estado.email, atualizado_em: new Date().toISOString() }));
+  await q(sb.from("croc_aprendizado").upsert(linhasAp, { onConflict: "casa_id,texto" }));
+  for (const { texto, destino } of linhasAp) estado.aprendidos[texto] = destino;
+}
 acoes.salvarNota = async (el) => {
   const r = estado.rascunho, c = compraPorId(r.compra_id);
-  const cmp = L.compararNota(c.itens, r.linhas);
+  const desta = L.compararNota(c.itens, r.linhas);
   el.disabled = true;
   try {
-    const linhas = r.linhas.map(({ descricao, valor, qtd, un, item_id, chave, removido }) => ({ descricao, valor, qtd, un, item_id: item_id ?? null, chave: chave ?? null, removido: !!removido }));
-    const nota = await q(sb.from("croc_notas").insert({ compra_id: c.id, chave: r.chave, emitente: r.emitente, emissao: r.emissao, total: r.total, linhas, conta_no_plano: cmp.contaNoPlano, criado_por: estado.email }).select("id, compra_id, conta_no_plano, total, emitente, criado_em, criado_por").single());
+    const linhas = r.linhas.map(({ descricao, valor, qtd, un, item_id, chave, removido, manual, origem }) => ({ descricao, valor, qtd, un, item_id: item_id ?? null, chave: chave ?? null, removido: !!removido, manual: !!manual, origem: origem ?? null }));
+    const campos = { compra_id: c.id, linhas, conta_no_plano: desta.contaNoPlano };
+    const sel = "id, compra_id, conta_no_plano, total, emitente, criado_em, criado_por, linhas";
+    let nota;
+    if (r.nota_id) {
+      nota = await q(sb.from("croc_notas").update(campos).eq("id", r.nota_id).select(sel).single());
+      const antiga = estado.notas.find((n) => n.id === r.nota_id);
+      estado.notas = estado.notas.filter((n) => n.id !== r.nota_id);
+      if (antiga && antiga.compra_id !== c.id) await recalcularPago(antiga.compra_id);
+    } else {
+      nota = await q(sb.from("croc_notas").insert({ ...campos, chave: r.chave, emitente: r.emitente, emissao: r.emissao, total: r.total, criado_por: estado.email }).select(sel).single());
+    }
     estado.notas.push(nota);
-    const pago = L.arred2(estado.notas.filter((n) => n.compra_id === c.id).reduce((s, n) => s + Number(n.conta_no_plano), 0));
-    await q(sb.from("croc_compras").update({ pago, feita_em: new Date().toISOString() }).eq("id", c.id));
+    await recalcularPago(c.id);
     const comprados = [...new Set(r.linhas.filter((l) => l.item_id && !l.removido).map((l) => l.item_id))];
     if (comprados.length) await q(sb.from("croc_itens").update({ marcado: true, marcado_por: estado.email, marcado_em: new Date().toISOString() }).in("id", comprados));
-    c.pago = pago; c.notas = (c.notas ?? 0) + 1;
     c.itens.forEach((i) => { if (comprados.includes(i.id)) i.marcado = true; });
-    estado.rascunho = null;
-    fn("/avisar", { tipo: "compra", compra_id: c.id }).catch(() => {});
-    avisar(`${nomeCompra(c)} salva`);
-    ir("#grana");
+    await aprender(c, r.linhas).catch(() => {});
+    const novo = !r.nota_id;
+    estado.rascunho = null; guardarRascunho();
+    if (novo) fn("/avisar", { tipo: "compra", compra_id: c.id }).catch(() => {});
+    avisar(novo ? `Nota salva na ${nomeCompra(c).toLowerCase()}` : "Revisão salva");
+    ir(`#compras/${indiceCompra(c)}`);
   } catch (e) { el.disabled = false; avisar(e.message, true); }
 };
 
@@ -1138,6 +1276,7 @@ async function iniciar() {
   try {
     estado.casa = await q(sb.rpc("entrar"));
     await carregarTudo();
+    recuperarRascunho();
   } catch (e) {
     app.innerHTML = `<div class="vazio" style="min-height:80dvh;justify-content:center"><strong>${navigator.onLine ? "Não foi possível abrir sua casa" : "Sem internet"}</strong>${esc(e.message)}
       <button class="pilula" data-acao="recarregar">Tentar de novo</button><button class="link-mono" data-acao="sair">SAIR</button></div>`;

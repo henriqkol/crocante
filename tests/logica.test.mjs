@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
+  preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
 
 const INICIO = "2026-10-04"; // domingo
@@ -41,7 +42,8 @@ test("plano de 4 semanas para 2 pessoas fecha com o orçamento do plano original
 
 test("congelador por semana", () => {
   const p = gerarPlano(INICIO, 2);
-  assert.deepEqual([1, 2, 3, 4].map((s) => congeladorDaSemana(s - 1, p.compras[s].itens)), [9, 7, 6, 8]);
+  assert.deepEqual([1, 2, 3, 4].map((s) => congeladorDaSemana(s - 1, p.compras[s].itens)), [9, 7, 6, 8]); // sem cardápio: preparo original
+  assert.deepEqual([1, 2, 3, 4].map((s) => congeladorDaSemana(s - 1, p.compras[s].itens, p)), [9, 9, 8, 8]); // pelo cardápio
   assert.equal(semanaDoDia(INICIO, "2026-10-09"), 0);
   assert.equal(semanaDoDia(INICIO, "2026-10-31"), 3);
   assert.equal(semanaDoDia(INICIO, "2026-11-01"), null);
@@ -67,7 +69,9 @@ test("reconhece produtos na nota", () => {
     "CREME LEITE NESTLE 200G": "creme-leite", "LEITE CONDENSADO MOCA": "leite-condensado", "LEITE INTEGRAL 1L": "leite",
     "MUSSARELA FATIADA KG": "mussarela", "OVOS BRANCOS 30UN": "ovos", "PAO FORMA PULLMAN": "pao",
     "REFRIG COCA COLA 2L": "refri", "ARROZ T1 TIO JOAO 5KG": "arroz", "KETCHUP HEINZ 1KG": "ketchup",
-    "SAL REFINADO 1KG": "sal", "PAPEL HIG NEVE 12RL": "papel-hig", "CERVEJA LT 350ML": null, "RACAO GATO 1KG": null, "PILHA AA C/4": null,
+    "SAL REFINADO 1KG": "sal", "BATATA UAI 2KG": "batata-frita", "BATATA BRANCA OFERTA KG": "batata", "PAO FARIAS FORMA 500G": "pao",
+    "REQUEIJ. STA. CLARA 180G": "requeijao", "CHOC. ARCOR BARRA": "chocolate-barra", "FILEZINHO NAT 1KG IQF.SASSAMI": "peito",
+    "EMPAN.C.VALE 1KG TIRINHAS FGO": "nuggets", "SALS NATURAL FRACION": "salsicha", "TOMATE RASTEIRO MIUDO KG": null, "PAPEL HIG NEVE 12RL": "papel-hig", "CERVEJA LT 350ML": null, "RACAO GATO 1KG": null, "PILHA AA C/4": null,
   };
   for (const [desc, esperado] of Object.entries(casos)) assert.equal(modeloDaDescricao(desc), esperado, desc);
 });
@@ -113,4 +117,50 @@ test("lembretes", () => {
   // véspera do plano: compra do mês e da semana 1 no mesmo dia
   const vespera = lembretes("2026-10-02", "noite", p);
   assert.match(vespera.find((l) => l.tipo === "merc").corpo, /Compra do mês e da semana 1/);
+});
+
+test("bases dos pratos e onde elas esperam", () => {
+  assert.deepEqual(basesDoPrato(11), ["bolinhas"]);
+  assert.deepEqual(basesDoPrato(17).sort(), ["arroz", "feijao", "linguica"]);
+  assert.deepEqual(basesDoPrato(6), ["sobrecoxa"]);
+  assert.equal(guardaDaBase("arroz", 0), "fresco");
+  assert.equal(guardaDaBase("arroz", 3), "geladeira");
+  assert.equal(guardaDaBase("arroz", 4), "congelador");
+  assert.equal(guardaDaBase("bolinhas", 3), "congelador");
+  assert.equal(guardaDaBase("nuggets", 1), "congelador");
+});
+
+test("preparo segue o cardápio quando os pratos mudam de dia", () => {
+  const p = gerarPlano(INICIO, 2);
+  const antes = preparoDaSemana(p.inicio, 0, p.cardapio);
+  assert.ok(antes.frz.some((x) => /Bolinhas.*sexta/.test(x)));
+  // smash burger (sexta à noite) troca com o hot dog (segunda à noite)
+  const card = p.cardapio.map((x) => ({ ...x }));
+  const sexta = card.find((x) => x.data === "2026-10-09" && x.refeicao === "jantar");
+  const segunda = card.find((x) => x.data === "2026-10-05" && x.refeicao === "jantar");
+  [sexta.prato, segunda.prato] = [segunda.prato, sexta.prato];
+  const depois = preparoDaSemana(p.inicio, 0, card);
+  assert.ok(depois.gel.some((x) => /Bolinhas.*segunda/.test(x)));
+  assert.ok(!depois.frz.some((x) => /Bolinhas/.test(x)));
+  assert.equal(depois.saquinhos, antes.saquinhos - 1);
+  assert.ok(depois.conf.some((x) => /^Smash burger com batata \(segunda\)/.test(x)));
+  // e o lembrete de quinta à noite não pede mais as bolinhas
+  assert.deepEqual(descongelarParaAmanha(p.inicio, "2026-10-08", card).flatMap((x) => x.bases).sort(), ["arroz", "carne moída"]);
+});
+
+test("aprendizado e sugestões na nota", () => {
+  const p = gerarPlano(INICIO, 2);
+  const itens = p.compras[1].itens.map((it, i) => ({ ...it, id: `i${i}` }));
+  assert.equal(chaveTexto("BATATA UAI 2KG"), "BATATA UAI");
+  const frita = itens.find((i) => i.chave === "batata-frita"), inglesa = itens.find((i) => i.chave === "batata");
+  // a casa ensinou que "BATATA X" é a inglesa e que tomate não é do plano
+  const aprendidos = { [chaveTexto("BATATA SUPER 1KG")]: destinoDoItem(inglesa), [chaveTexto("TOMATE KG")]: "fora" };
+  const linhas = casarNota(itens, [{ descricao: "BATATA SUPER 1KG", valor: 6 }, { descricao: "TOMATE KG", valor: 3 }, { descricao: "BATATA UAI 2KG", valor: 22.49 }], aprendidos);
+  assert.equal(linhas[0].item_id, inglesa.id);
+  assert.equal(linhas[0].origem, "aprendido");
+  assert.equal(linhas[1].removido, true);
+  assert.equal(linhas[2].item_id, frita.id);
+  const s = sugerirItens("REQUEIJ. STA. CLARA 180G", itens);
+  assert.equal(s[0].item.chave, "requeijao");
+  assert.equal(s[0].nivel, "alta");
 });

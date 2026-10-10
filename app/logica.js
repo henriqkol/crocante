@@ -1,5 +1,5 @@
 // Lógica pura do Crocante (sem tela, sem banco). Usada pelo app, pela função do servidor e pelos testes.
-import { CARDAPIO, PREPARO, PRATOS } from "./dados.js";
+import { CARDAPIO, PREPARO, PRATOS, RECEITAS } from "./dados.js";
 import { MES, SEMANA } from "./compras.js";
 
 // ------------------------------------------------------------------ datas (sempre "AAAA-MM-DD", meio-dia UTC)
@@ -86,11 +86,134 @@ export function semanaDoDia(inicio, dia) {
   return Math.floor(d / 7);
 }
 
-/** Espaços ocupados no congelador na semana (0 a 3): bases do domingo + o que já vem congelado + bacon do mês. */
-export function congeladorDaSemana(w, itensDaSemana) {
-  const bases = PREPARO[w]?.frz?.length ?? 0;
+/**
+ * Espaços ocupados no congelador na semana (0 a 3): saquinhos das bases que vão para o congelador
+ * (pelo cardápio real da semana, com as mudanças de dia), o que já vem congelado da compra e o bacon do mês.
+ * Sem cardápio, usa o preparo original do plano.
+ */
+export function congeladorDaSemana(w, itensDaSemana, plano = null) {
+  const bases = plano?.cardapio?.length ? preparoDaSemana(plano.inicio, w, plano.cardapio).saquinhos : (PREPARO[w]?.frz?.length ?? 0);
   const congelados = (itensDaSemana ?? []).filter((it) => it.congela && Number(it.qtd) > 0).length;
   return bases + congelados + 1;
+}
+
+// ------------------------------------------------------------------ preparo de domingo (pelo cardápio da semana)
+// Bases que os pratos usam. tipo: cozido (feito no domingo), cru (bolinhas de hambúrguer), empanado (congelado cru,
+// vai direto do freezer para a airfryer) e comprado (vem congelado da compra e só precisa descongelar).
+export const BASES = {
+  arroz: { nome: "arroz", tipo: "cozido" }, feijao: { nome: "feijão", tipo: "cozido" }, carne: { nome: "carne moída", tipo: "cozido" },
+  desfiado: { nome: "frango desfiado", tipo: "cozido" }, cubos: { nome: "frango em cubos", tipo: "cozido" },
+  bolinhas: { nome: "bolinhas de hambúrguer cruas", tipo: "cru" },
+  nuggets: { nome: "nuggets crus", tipo: "empanado" }, files: { nome: "filés empanados crus", tipo: "empanado" },
+  sobrecoxa: { nome: "sobrecoxa", tipo: "comprado" }, linguica: { nome: "linguiça", tipo: "comprado" },
+};
+/** Bases de um prato, lidas do "pronto do domingo" da receita (+ o que vem congelado da compra). */
+export function basesDoPrato(id) {
+  const out = new Set();
+  for (const p of RECEITAS[id]?.pre ?? []) {
+    const n = normalizar(p);
+    if (/^ARROZ/.test(n)) out.add("arroz");
+    else if (/^FEIJAO/.test(n)) out.add("feijao");
+    else if (/BOLINHAS/.test(n)) out.add("bolinhas");
+    else if (/^CARNE MOIDA/.test(n)) out.add("carne");
+    else if (/DESFIADO/.test(n)) out.add("desfiado");
+    else if (/CUBOS/.test(n)) out.add("cubos");
+    else if (/NUGGETS/.test(n)) out.add("nuggets");
+    else if (/FILES EMPANADOS/.test(n)) out.add("files");
+    else if (/SOBRECOXA/.test(n)) out.add("sobrecoxa");
+  }
+  if (Number(id) === 6) out.add("sobrecoxa");
+  if (Number(id) === 17 || Number(id) === 20) out.add("linguica");
+  return [...out];
+}
+/**
+ * Onde a base espera até o dia do prato (d = 0 domingo … 6 sábado da semana do plano).
+ * Cozidos: domingo = fresco do preparo; até quarta na geladeira; quinta a sábado no congelador (como no plano original).
+ * Bolinhas cruas: até terça na geladeira. Empanados: sempre no congelador. Comprados: congelados desde a compra.
+ */
+export function guardaDaBase(base, d) {
+  const tipo = BASES[base]?.tipo;
+  if (tipo === "empanado") return "congelador";
+  if (tipo === "comprado") return "comprado";
+  if (d === 0) return "fresco";
+  if (tipo === "cru") return d <= 2 ? "geladeira" : "congelador";
+  return d <= 3 ? "geladeira" : "congelador";
+}
+/** Precisa descongelar na véspera? */
+export const descongelaNaVespera = (base, d) => ["congelador", "comprado"].includes(guardaDaBase(base, d)) && BASES[base]?.tipo !== "empanado";
+
+const lista = (xs) => xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}`;
+const maiusc = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+/** Usos de bases em cada refeição da semana w (0 a 3), pelo cardápio do plano. */
+export function usosDaSemana(inicio, w, cardapio) {
+  const domingo = addDias(inicio, 7 * w);
+  const usos = [];
+  for (let d = 0; d < 7; d++) {
+    const dia = addDias(domingo, d);
+    for (const ref of ["almoco", "jantar"]) {
+      const r = cardapio.find((x) => x.data === dia && x.refeicao === ref);
+      if (!r) continue;
+      for (const base of basesDoPrato(r.prato)) usos.push({ base, d, dia, ref, prato: r.prato });
+    }
+  }
+  return usos;
+}
+/**
+ * O que guardar e descongelar na semana, calculado pelo cardápio real (os pratos podem mudar de dia dentro da semana).
+ * Retorna listas de texto para a tela e o número de saquinhos no congelador.
+ */
+export function preparoDaSemana(inicio, w, cardapio) {
+  const usos = usosDaSemana(inicio, w, cardapio);
+  const porBase = new Map();
+  for (const u of usos) porBase.set(u.base, [...(porBase.get(u.base) ?? []), u]);
+  const fresco = [], gel = [], frz = [], conf = [];
+  let saquinhos = 0;
+  for (const [base, us] of porBase) {
+    const b = BASES[base];
+    const dias = (g) => [...new Set(us.filter((u) => guardaDaBase(base, u.d) === g).map((u) => u.d))];
+    if (b.tipo === "empanado") { frz.push(`${maiusc(b.nome)} (direto do freezer, sem descongelar)`); saquinhos++; continue; }
+    if (b.tipo === "comprado") continue;
+    const f = us.filter((u) => u.d === 0);
+    if (f.length) fresco.push(`${maiusc(b.nome)} (${lista(f.map((u) => (u.ref === "almoco" ? "almoço" : "jantar")))} de domingo)`);
+    const g = dias("geladeira");
+    if (g.length) gel.push(`${maiusc(b.nome)} de ${lista(g.map((d) => DIAS[d]))}`);
+    const c = dias("congelador");
+    if (c.length) { frz.push(`${maiusc(b.nome)} de ${lista(c.map((d) => DIAS[d]))}${c.length > 1 ? `, em ${c.length} saquinhos` : ""}`); saquinhos += c.length; }
+  }
+  // Descongelar: na noite anterior ao dia do prato
+  const porNoite = new Map();
+  for (const u of usos) {
+    if (!descongelaNaVespera(u.base, u.d)) continue;
+    const nomes = porNoite.get(u.d) ?? new Set();
+    nomes.add(BASES[u.base].nome);
+    porNoite.set(u.d, nomes);
+  }
+  const desc = [...porNoite.entries()].sort((a, b) => a[0] - b[0]).map(([d, nomes]) => ({
+    dia: d === 0 ? 6 : d - 1, quando: d === 0 ? "Sábado anterior à noite" : `${maiusc(DIAS[d - 1])} à noite`, o: `${lista([...nomes])} de ${DIAS[d]}`,
+  }));
+  // Confira em casa: o que cada prato usa na hora, no dia em que ele está agora
+  const domingo = addDias(inicio, 7 * w);
+  for (let d = 0; d < 7; d++) for (const ref of ["almoco", "jantar"]) {
+    const r = cardapio.find((x) => x.data === addDias(domingo, d) && x.refeicao === ref);
+    if (r) conf.push(`${PRATOS[r.prato].nome} (${DIAS[d]}): ${(RECEITAS[r.prato]?.ing ?? []).slice(0, 3).join(", ")}`);
+  }
+  return { fresco, gel, frz, desc, conf, saquinhos, usos };
+}
+
+/** O que descongelar hoje à noite para os pratos de amanhã. */
+export function descongelarParaAmanha(inicio, hoje, cardapio) {
+  const amanha = addDias(hoje, 1);
+  const w = semanaDoDia(inicio, amanha);
+  if (w == null) return [];
+  const d = diasEntre(addDias(inicio, 7 * w), amanha);
+  const itens = [];
+  for (const ref of ["almoco", "jantar"]) {
+    const r = cardapio.find((x) => x.data === amanha && x.refeicao === ref);
+    if (!r) continue;
+    const bs = basesDoPrato(r.prato).filter((b) => descongelaNaVespera(b, d)).map((b) => BASES[b].nome);
+    if (bs.length) itens.push({ prato: r.prato, ref, bases: bs });
+  }
+  return itens;
 }
 
 // ------------------------------------------------------------------ orçamento
@@ -131,17 +254,72 @@ export function modeloDaDescricao(descricao) {
   return null;
 }
 
+/** Texto da nota sem números, unidades e sinais: chave do que a casa ensinou ao app ("BATATA UAI 2KG" → "BATATA UAI"). */
+export function chaveTexto(s) {
+  const unidades = new Set(["UN", "KG", "PCT", "CX", "LT", "ML", "GR", "UND", "G", "L"]);
+  return normalizar(s).replace(/[^A-Z ]+/g, " ").split(" ").filter((p) => p.length >= 2 && !unidades.has(p)).join(" ");
+}
+/** Destino aprendido de um item da compra: a chave do modelo ou o nome (itens adicionados à mão). */
+export const destinoDoItem = (it) => it.chave || `nome:${chaveTexto(it.nome)}`;
+
 /**
  * Liga cada linha da nota a um item da compra.
- * itensCompra: [{id, chave}] · linhasNota: [{descricao, valor}]
- * Retorna as linhas com item_id (ou null) e, quando o produto é do plano mas de outra lista, `chave`.
+ * itensCompra: [{id, chave, nome}] · linhasNota: [{descricao, valor}]
+ * aprendidos: {chaveTexto: destino} — o que a casa já corrigiu antes vence as regras; destino "fora" = não é do plano.
+ * Retorna as linhas com item_id (ou null), `chave` do modelo (produto do plano, talvez de outra lista) e `origem`.
  */
-export function casarNota(itensCompra, linhasNota) {
-  const porChave = new Map(itensCompra.map((i) => [i.chave, i.id]));
+export function casarNota(itensCompra, linhasNota, aprendidos = {}) {
+  const porDestino = new Map(itensCompra.map((i) => [destinoDoItem(i), i.id]));
+  const porChave = new Map(itensCompra.filter((i) => i.chave).map((i) => [i.chave, i.id]));
   return linhasNota.map((l) => {
+    const ap = aprendidos[chaveTexto(l.descricao)];
+    if (ap === "fora") return { ...l, chave: null, item_id: null, removido: true, origem: "aprendido" };
+    if (ap && porDestino.has(ap)) return { ...l, chave: ap.startsWith("nome:") ? null : ap, item_id: porDestino.get(ap), removido: false, origem: "aprendido" };
     const chave = modeloDaDescricao(l.descricao);
-    return { ...l, chave, item_id: chave && porChave.has(chave) ? porChave.get(chave) : null, removido: !!l.removido };
+    return { ...l, chave, item_id: chave && porChave.has(chave) ? porChave.get(chave) : null, removido: !!l.removido, origem: chave ? "regra" : null };
   });
+}
+
+// Abreviações comuns nas notas
+const ABREV = { REQUEIJ: "REQUEIJAO", REQ: "REQUEIJAO", CHOC: "CHOCOLATE", FGO: "FRANGO", FRG: "FRANGO", EMPAN: "EMPANADO", SALS: "SALSICHA",
+  MUSS: "MUSSARELA", MUC: "MUSSARELA", BAT: "BATATA", LTE: "LEITE", CR: "CREME", CONG: "CONGELADO", MOL: "MOLHO", TOM: "TOMATE",
+  SASSAMI: "PEITO", FILEZINHO: "PEITO", TIRINHAS: "NUGGETS", LING: "LINGUICA", PRES: "PRESUNTO", BISC: "BISCOITO", REFRIG: "REFRIGERANTE",
+  DET: "DETERGENTE", AMAC: "AMACIANTE", DESOD: "DESODORANTE", FAR: "FARINHA", MARG: "MARGARINA", MAC: "MACARRAO", ACHOC: "ACHOCOLATADO" };
+const VAZIAS = new Set(["UN", "KG", "PCT", "CX", "LT", "ML", "GR", "UND", "NAT", "TRAD", "OFERTA", "PROMO", "FRACION", "FRAC", "IQF", "COM", "SEM", "TIPO", "PARA", "DE", "DO", "DA"]);
+function palavras(s) {
+  return normalizar(s).replace(/[^A-Z ]+/g, " ").split(" ").filter((p) => p.length >= 3 && !VAZIAS.has(p)).map((p) => ABREV[p] ?? p);
+}
+function trigramas(s) { const g = new Set(); const x = `  ${s} `; for (let i = 0; i < x.length - 2; i++) g.add(x.slice(i, i + 3)); return g; }
+function parecido(a, b) {
+  if (a === b) return 1;
+  if (a.length >= 3 && b.length >= 3 && (a.startsWith(b) || b.startsWith(a))) return 0.85;
+  const A = trigramas(a), B = trigramas(b);
+  let c = 0;
+  for (const x of A) if (B.has(x)) c++;
+  return (2 * c) / (A.size + B.size);
+}
+const PALAVRAS_MODELO = new Map([...SEMANA, ...MES].map((t) => [t.chave, t.busca.map((b) => b.replace(/\(\?!.*$/, "")).join(" ").replace(/\\[bB]/g, " ").replace(/[^A-Z ]+/g, " ")]));
+/**
+ * Itens da compra mais parecidos com a linha da nota, para a pessoa escolher: [{item, nota, nivel}] do mais parecido para o menos.
+ * nivel: "alta" | "média" | "baixa".
+ */
+export function sugerirItens(descricao, itensCompra, n = 3) {
+  const ps = palavras(descricao);
+  if (!ps.length) return [];
+  const regra = modeloDaDescricao(descricao);
+  const res = itensCompra.map((it) => {
+    const alvo = [...new Set(palavras(`${it.nome} ${PALAVRAS_MODELO.get(it.chave) ?? ""}`))];
+    let soma = 0, melhor = 0;
+    for (const p of ps) {
+      const m = Math.max(0, ...alvo.map((a) => parecido(p, a)));
+      if (m >= 0.5) soma += m;
+      melhor = Math.max(melhor, m);
+    }
+    let nota = Math.max(soma / ps.length, melhor * 0.45);
+    if (regra && regra === it.chave) nota = Math.max(nota, 0.9);
+    return { item: it, nota: Math.round(nota * 100) / 100 };
+  }).filter((x) => x.nota >= 0.3).sort((a, b) => b.nota - a.nota).slice(0, n);
+  return res.map((x) => ({ ...x, nivel: x.nota >= 0.65 ? "alta" : x.nota > 0.45 ? "média" : "baixa" }));
 }
 
 /**
@@ -186,13 +364,11 @@ const nomePrato = (id) => PRATOS[id]?.nome ?? "";
 export function lembretes(hoje, momento, plano) {
   const out = [];
   const amanha = addDias(hoje, 1);
-  const w = semanaDoDia(plano.inicio, hoje);
   if (momento === "noite") {
-    if (w != null) {
-      const desc = (PREPARO[w]?.desc ?? []).filter((d) => d.dia === diaSemana(hoje));
-      for (const d of desc) {
-        out.push({ tipo: "desc", tag: `desc-${hoje}`, titulo: "Hora de descongelar", corpo: `Passe do congelador para a geladeira: ${d.o}.`, url: "./#hoje" });
-      }
+    const desc = descongelarParaAmanha(plano.inicio, hoje, plano.cardapio ?? []);
+    if (desc.length) {
+      const partes = desc.map((x) => `${lista(x.bases)} (${PRATOS[x.prato].nome.toLowerCase()}, ${x.ref === "almoco" ? "almoço" : "jantar"})`);
+      out.push({ tipo: "desc", tag: `desc-${hoje}`, titulo: "Hora de descongelar", corpo: `Passe do congelador para a geladeira: ${lista(partes)}.`, url: "./#hoje" });
     }
     const doMercado = plano.compras.filter((c) => c.data === amanha && c.pago == null);
     if (doMercado.length) {
@@ -200,7 +376,7 @@ export function lembretes(hoje, momento, plano) {
       const itens = doMercado.reduce((s, c) => s + (c.itens?.length ?? 0), 0);
       const valor = doMercado.reduce((s, c) => s + somaItens(c.itens ?? []), 0);
       const nome = doMercado.length > 1 ? `compra do mês e da semana ${sem?.semana}` : sem ? `compra da semana ${sem.semana}` : "compra do mês";
-      const cong = sem ? ` O congelador fica com ${congeladorDaSemana(sem.semana - 1, sem.itens)} espaços ocupados.` : "";
+      const cong = sem ? ` O congelador fica com ${congeladorDaSemana(sem.semana - 1, sem.itens, plano)} espaços ocupados.` : "";
       out.push({ tipo: "merc", tag: `merc-${amanha}`, titulo: "Amanhã é dia de mercado", corpo: `${nome[0].toUpperCase() + nome.slice(1)}: ${itens} itens, ${brl(valor, 0)} planejados.${cong}`, url: `./#compras/${sem ? sem.semana : 0}` });
     }
     const ws = semanaDoDia(plano.inicio, amanha);
