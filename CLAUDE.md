@@ -32,5 +32,5 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 - Lembretes na véspera (19h/20h/21h, escolha de cada aparelho): descongelar (`descongelarParaAmanha`, pelo cardápio real), mercado de amanhã, preparo de domingo. 14h: escanear nota da compra de hoje. 18h: jantar (desligado por padrão). Orçamento: aviso único por plano quando a sobra prevista fica < R$ 30 ou negativa (após salvar compra).
 
 ## Visual
-Campos de dinheiro (`campoDinheiro`, atributo `data-dinheiro`): os dígitos entram pelos centavos (1200 → 12,00; 59 → 0,59); lidos com `numero()`.
+Campos de dinheiro (`campoDinheiro`, atributo `data-dinheiro`): os dígitos entram pelos centavos e o campo começa em 0,00 (1200 → 12,00; 59 → 0,59); lidos com `numero()`.
 Design system GranDom (fontes Doto, Space Grotesk, Space Mono em `app/fonts`). Tema escuro padrão, claro pelo aparelho ou em Casa → Aparência. Ícone: caixinha de batata frita em pixel (`app/icons`).

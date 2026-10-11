@@ -224,15 +224,20 @@ document.addEventListener("click", (e) => {
 });
 /** Campos de dinheiro: os dígitos entram pelos centavos (1200 → 12,00; 59 → 0,59). */
 const textoDinheiro = (centavos) => (centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const valorCampoDinheiro = (v) => (v == null || v === "" || isNaN(Number(v)) ? "" : textoDinheiro(Math.round(Number(v) * 100)));
+const valorCampoDinheiro = (v) => textoDinheiro(v == null || v === "" || isNaN(Number(v)) ? 0 : Math.round(Number(v) * 100));
 const campoDinheiro = (name, valor, attrs = "") => `<input name="${name}" data-dinheiro inputmode="numeric" autocomplete="off" value="${esc(valorCampoDinheiro(valor))}" ${attrs}>`;
 document.addEventListener("input", (e) => {
   const el = e.target;
   if (!el.matches?.("[data-dinheiro]")) return;
   const digitos = el.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 11);
-  el.value = digitos ? textoDinheiro(Number(digitos)) : "";
+  el.value = textoDinheiro(Number(digitos || 0));
   el.setSelectionRange?.(el.value.length, el.value.length);
 });
+// o cursor fica sempre no fim: cada dígito novo entra pela direita
+for (const tipo of ["focus", "click"]) document.addEventListener(tipo, (e) => {
+  const el = e.target;
+  if (el.matches?.("[data-dinheiro]")) requestAnimationFrame(() => el.setSelectionRange?.(el.value.length, el.value.length));
+}, true);
 document.addEventListener("change", (e) => {
   const el = e.target.closest("[data-muda]");
   if (el && mudancas[el.dataset.muda]) mudancas[el.dataset.muda](el, e);
@@ -614,8 +619,8 @@ acoes.criarItem = async (el) => {
 acoes.pagarSemNota = (el) => {
   const c = compraPorId(el.dataset.compra);
   abrirFolha(`<h2 class="h2">Quanto ficou a ${esc(nomeCompra(c).toLowerCase())}?</h2>
-    <p class="pequeno">Use quando não der para ler a nota. Digite só o que é do plano (sem compras à parte).</p>
-    <label class="campo"><span class="rotulo">VALOR PAGO</span>${campoDinheiro("valor", "", `placeholder="${esc(R(L.somaItens(c.itens)))}"`)}</label>
+    <p class="pequeno">Use quando não der para ler a nota. Digite só o que é do plano (sem compras à parte). Planejado: ${esc(R(L.somaItens(c.itens)))}.</p>
+    <label class="campo"><span class="rotulo">VALOR PAGO</span>${campoDinheiro("valor", 0)}</label>
     <button class="botao" data-acao="salvarPagoManual" data-compra="${c.id}">Salvar</button>`);
 };
 acoes.salvarPagoManual = async (el) => {
