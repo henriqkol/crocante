@@ -76,8 +76,20 @@ const pratoDo = (dia, ref) => estado.cardapio.find((x) => x.data === dia && x.re
 function proximaCompra() {
   return [...estado.compras].filter((c) => c.pago == null).sort((a, b) => a.data.localeCompare(b.data) || indiceCompra(a) - indiceCompra(b))[0] ?? null;
 }
+/** Itens ativos da compra que ainda não estão em nenhuma nota (só conta quando a compra tem notas). */
+function pendentesDaCompra(c) {
+  const ns = notasDaCompra(c.id);
+  if (!ns.length) return [];
+  const cobertos = new Set(ns.flatMap((n) => (n.linhas ?? []).filter((l) => l.item_id && !l.removido).map((l) => l.item_id)));
+  return c.itens.filter((i) => !cobertos.has(i.id));
+}
+/** Concluída = paga e cada item da lista veio numa nota, foi movido para outra semana ou removido (ou paga sem nota). */
+const compraConcluida = (c) => c.pago != null && pendentesDaCompra(c).length === 0;
 function statusCompra(c) {
-  if (c.pago != null) return { txt: "FEITA", tipo: "feita" };
+  if (c.pago != null) {
+    const falta = pendentesDaCompra(c).length;
+    return falta ? { txt: `FALTAM ${falta}`, tipo: "alerta" } : { txt: "CONCLUÍDA", tipo: "feita" };
+  }
   const h = hoje();
   if (c.data === h) return { txt: "HOJE", tipo: "alerta" };
   if (c.data === L.addDias(h, 1)) return { txt: "AMANHÃ", tipo: "alerta" };
@@ -112,7 +124,10 @@ async function carregarTudo() {
     q(sb.from("croc_compras").select("*, croc_itens(*)").eq("plano_id", atual.id)),
     q(sb.from("croc_cardapio").select("*").eq("plano_id", atual.id).order("data")),
   ]);
-  estado.compras = compras.map((c) => ({ ...c, itens: (c.croc_itens ?? []).sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome)) }))
+  estado.compras = compras.map((c) => {
+    const todos = (c.croc_itens ?? []).sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome));
+    return { ...c, itens: todos.filter((i) => !i.movido_para), movidos: todos.filter((i) => i.movido_para) };
+  })
     .sort((a, b) => indiceCompra(a) - indiceCompra(b));
   estado.compras.forEach((c) => delete c.croc_itens);
   estado.cardapio = cardapio;
@@ -154,7 +169,10 @@ function ouvirCarrinho() {
       if (ev.eventType === "UPDATE") {
         for (const c of estado.compras) {
           const i = c.itens.findIndex((x) => x.id === novo.id);
-          if (i >= 0) c.itens[i] = { ...c.itens[i], ...novo };
+          if (i >= 0) {
+            const it = { ...c.itens[i], ...novo };
+            if (it.movido_para) { c.itens.splice(i, 1); if (!c.movidos.some((x) => x.id === it.id)) c.movidos.push(it); } else c.itens[i] = it;
+          }
         }
       } else if (ev.eventType === "INSERT") {
         const c = compraPorId(novo.compra_id);
@@ -448,11 +466,12 @@ async function telaCompras(n) {
   app.innerHTML = `${topo()}<div class="conteudo">
     <div class="cabeca"><div class="eyebrow">COMPRAS · ${esc(nomeMes(estado.plano.inicio).toUpperCase())}</div>
       <div class="segmentos" role="group" aria-label="Escolher compra">
-        ${estado.compras.map((x) => { const s = statusCompra(x); return `<button type="button" aria-pressed="${x.id === c.id}" data-acao="irCompra" data-n="${indiceCompra(x)}">${x.tipo === "mes" ? "Mês" : `Sem ${x.semana}`}<small class="${s.tipo === "alerta" ? "alerta" : ""}">${x.pago != null ? "✓" : L.dataCurta(x.data)}</small></button>`; }).join("")}
+        ${estado.compras.map((x) => { const s = statusCompra(x), ok = compraConcluida(x), falta = x.pago != null ? pendentesDaCompra(x).length : 0; return `<button type="button" class="${ok ? "concluida" : ""}" aria-pressed="${x.id === c.id}" data-acao="irCompra" data-n="${indiceCompra(x)}" aria-label="${esc(nomeCompra(x))}${ok ? ", concluída" : ""}">${x.tipo === "mes" ? "Mês" : `Sem ${x.semana}`}<small class="${s.tipo === "alerta" ? "alerta" : ""}">${ok ? "✓" : falta ? `faltam ${falta}` : L.dataCurta(x.data)}</small></button>`; }).join("")}
       </div></div>
     <section style="display:flex;flex-direction:column;gap:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h1 class="h2">${esc(nomeCompra(c))}</h1><span class="etiqueta ${st.tipo === "alerta" ? "alerta" : ""}"><span class="ponto ${st.tipo === "feita" ? "cinza" : ""}"></span>${st.txt}</span></div>
       <p class="pequeno">${esc(sub)}</p>
+      ${c.pago != null && pendentesDaCompra(c).length ? `<div class="contorno alerta pequeno"><span><b style="font-weight:600;color:var(--fg)">Faltam ${pl(pendentesDaCompra(c).length, "item", "itens")} para concluir.</b> Cada item precisa ter vindo numa nota, ser movido para outra semana ou removido. Toque no valor do item para mover ou remover.</span></div>` : ""}
       <div class="grade">
         <div><span class="rotulo">${c.pago != null ? `PAGO · PLAN. ${R0(total)}` : "PLANEJADO"}</span><span class="numero m">${R(c.pago ?? total).replace("R$ ", "R$")}</span></div>
         <div><span class="rotulo">NO CARRINHO</span><span class="numero m vermelho">${R(noCarrinho).replace("R$ ", "R$")}</span></div>
@@ -472,6 +491,8 @@ async function telaCompras(n) {
         <button type="button" class="editar" data-acao="editarItem" data-id="${i.id}" aria-label="Editar ${esc(i.nome)}" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
           <span>${R(L.valorItem(i))}</span>${pagos.has(i.id) ? `<span style="font-size:12px;color:${pagos.get(i.id) > L.valorItem(i) + 0.005 ? "var(--signal-2)" : "var(--fg)"}">pago ${R(pagos.get(i.id))}</span>` : notasDaCompra(c.id).length ? `<span style="font-size:11px;color:var(--fg-mute)">não veio na nota</span>` : ""}</button>
       </label>`).join("")}</div></section>`).join("")}
+    ${c.movidos?.length ? `<section><div class="secao-titulo"><h2 class="h3">Movidos para outra semana</h2></div>
+      <div class="lista">${c.movidos.map((i) => { const d = compraPorId(i.movido_para); return `<div class="linha" style="opacity:.7"><span class="cresce"><span class="riscado">${esc(i.nome)}</span><span class="pequeno">${esc(L.qtdTexto(i.qtd, i.unidade))} · foi para a ${esc(d ? nomeCompra(d).toLowerCase() : "outra compra")}</span></span><span class="valor">${R(L.valorItem(i))}</span></div>`; }).join("")}</div></section>` : ""}
     <div class="pilulas"><button class="pilula" data-acao="novoItem" data-compra="${c.id}">+ Adicionar item</button>
       ${c.pago == null ? `<button class="pilula" data-acao="pagarSemNota" data-compra="${c.id}">Já paguei, sem nota</button>` : `<button class="pilula" data-acao="desfazerPago" data-compra="${c.id}">Reabrir compra</button>`}</div>
     ${notasDaCompra(c.id).length ? `<section><div class="secao-titulo"><h2 class="h3">Notas desta compra</h2><span class="mono pequeno">${R(c.pago ?? 0)}</span></div>
@@ -525,8 +546,11 @@ function lerFormItem() {
 acoes.editarItem = (el, e) => {
   e.stopPropagation();
   const [, it] = itemPorId(el.dataset.id);
+  const [c] = itemPorId(el.dataset.id);
+  const prox = c.tipo === "semana" && c.semana < 4 ? estado.compras.find((x) => x.tipo === "semana" && x.semana === c.semana + 1) : null;
   abrirFolha(`<h2 class="h2">Editar item</h2>${formItem(it)}
     <button class="botao" data-acao="salvarItem" data-id="${it.id}">Salvar</button>
+    ${prox ? `<button class="pilula" data-acao="moverItem" data-id="${it.id}" data-para="${prox.id}">Mover para a semana ${prox.semana}</button>` : ""}
     <button class="link-mono" data-acao="removerItem" data-id="${it.id}">REMOVER DA LISTA</button>`);
 };
 acoes.salvarItem = async (el) => {
@@ -895,15 +919,25 @@ function telaComparar() {
   </div>
   <div class="rodape-fixo"><button class="botao" data-acao="salvarNota">${r.nota_id ? "Salvar revisão" : `Salvar nota da ${esc(nomeCompra(c).toLowerCase())}`}</button></div>`;
 }
+/** Passa o item para outra compra: a cópia vai para lá e o original fica marcado como movido (sai do planejado daqui). */
+async function moverItem(itemId, paraId) {
+  const [c, it] = itemPorId(itemId);
+  const para = compraPorId(paraId);
+  const novo = await q(sb.from("croc_itens").insert({ compra_id: para.id, chave: it.chave, nome: it.nome, qtd: it.qtd, unidade: it.unidade, preco: it.preco, local: it.local, secao: it.secao ?? null, coringa: it.coringa, congela: it.congela, ordem: it.ordem }).select().single());
+  await q(sb.from("croc_itens").update({ movido_para: para.id }).eq("id", it.id));
+  if (!para.itens.some((x) => x.id === novo.id)) para.itens.push(novo);
+  c.itens = c.itens.filter((x) => x.id !== it.id);
+  c.movidos = [...(c.movidos ?? []).filter((x) => x.id !== it.id), { ...it, movido_para: para.id }];
+  avisar(`${it.nome} vai para a semana ${para.semana}`);
+  return it;
+}
+acoes.moverItem = async (el) => {
+  try { await moverItem(el.dataset.id, el.dataset.para); fecharFolha(); desenhar(); }
+  catch (e) { avisar(e.message, true); }
+};
 acoes.passarItem = async (el) => {
-  const [, it] = itemPorId(el.dataset.id);
-  const para = compraPorId(el.dataset.para);
-  try {
-    const novo = await q(sb.from("croc_itens").insert({ compra_id: para.id, chave: it.chave, nome: it.nome, qtd: it.qtd, unidade: it.unidade, preco: it.preco, local: it.local, coringa: it.coringa, congela: it.congela, ordem: it.ordem }).select().single());
-    if (!para.itens.some((x) => x.id === novo.id)) para.itens.push(novo);
-    estado.rascunho.passados.push(it.id);
-    guardarRascunho(); desenhar(); avisar(`${it.nome} vai para a semana ${para.semana}`);
-  } catch (e) { avisar(e.message, true); }
+  try { const it = await moverItem(el.dataset.id, el.dataset.para); estado.rascunho.passados.push(it.id); guardarRascunho(); desenhar(); }
+  catch (e) { avisar(e.message, true); }
 };
 /** Grava o que a casa corrigiu ou confirmou à mão, para as próximas notas. */
 async function aprender(c, linhas) {
