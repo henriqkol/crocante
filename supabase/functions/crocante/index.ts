@@ -95,7 +95,7 @@ async function planoDaCasa(casa: number, hoje: string) {
   const p = planos.find((x) => x.inicio <= hoje) ?? planos[0];
   if (!p) return null;
   const [compras, cardapio, notas] = await Promise.all([
-    adm.from("croc_compras").select("id, tipo, semana, data, pago, croc_itens(id, nome, qtd, preco, congela, movido_para)").eq("plano_id", p.id).then(ok) as Promise<any[]>,
+    adm.from("croc_compras").select("id, tipo, semana, data, pago, croc_itens!croc_itens_compra_id_fkey(id, nome, qtd, preco, congela, movido_para)").eq("plano_id", p.id).then(ok) as Promise<any[]>,
     adm.from("croc_cardapio").select("data, refeicao, prato").eq("plano_id", p.id).then(ok) as Promise<any[]>,
     adm.from("croc_notas").select("compra_id").eq("casa_id", casa).then(ok) as Promise<any[]>,
   ]);

@@ -121,7 +121,7 @@ async function carregarTudo() {
   estado.compras = []; estado.cardapio = []; estado.notas = [];
   if (!atual) return;
   const [compras, cardapio] = await Promise.all([
-    q(sb.from("croc_compras").select("*, croc_itens(*)").eq("plano_id", atual.id)),
+    q(sb.from("croc_compras").select("*, croc_itens!croc_itens_compra_id_fkey(*)").eq("plano_id", atual.id)),
     q(sb.from("croc_cardapio").select("*").eq("plano_id", atual.id).order("data")),
   ]);
   estado.compras = compras.map((c) => {
