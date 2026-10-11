@@ -222,6 +222,17 @@ document.addEventListener("click", (e) => {
   const f = acoes[el.dataset.acao];
   if (f) { e.preventDefault(); f(el, e); }
 });
+/** Campos de dinheiro: os dígitos entram pelos centavos (1200 → 12,00; 59 → 0,59). */
+const textoDinheiro = (centavos) => (centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const valorCampoDinheiro = (v) => (v == null || v === "" || isNaN(Number(v)) ? "" : textoDinheiro(Math.round(Number(v) * 100)));
+const campoDinheiro = (name, valor, attrs = "") => `<input name="${name}" data-dinheiro inputmode="numeric" autocomplete="off" value="${esc(valorCampoDinheiro(valor))}" ${attrs}>`;
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!el.matches?.("[data-dinheiro]")) return;
+  const digitos = el.value.replace(/\D/g, "").replace(/^0+/, "").slice(0, 11);
+  el.value = digitos ? textoDinheiro(Number(digitos)) : "";
+  el.setSelectionRange?.(el.value.length, el.value.length);
+});
 document.addEventListener("change", (e) => {
   const el = e.target.closest("[data-muda]");
   if (el && mudancas[el.dataset.muda]) mudancas[el.dataset.muda](el, e);
@@ -546,7 +557,7 @@ function formItem(it = {}) {
       <label class="campo"><span class="rotulo">UNIDADE</span><input name="unidade" value="${esc(it.unidade ?? "un")}"></label>
     </div>
     <div class="campos-2">
-      <label class="campo"><span class="rotulo">PREÇO POR UNIDADE</span><input name="preco" inputmode="decimal" value="${esc(String(it.preco ?? "").replace(".", ","))}"></label>
+      <label class="campo"><span class="rotulo">PREÇO POR UNIDADE</span>${campoDinheiro("preco", it.preco)}</label>
       <label class="campo"><span class="rotulo">ONDE GUARDA</span><select name="local">${Object.entries(LOCAIS).map(([k, v]) => `<option value="${k}" ${it.local === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
     </div>
     <label class="campo"><span class="rotulo">SEÇÃO DO MERCADO</span><select name="secao">${SECOES.map(([k, v]) => `<option value="${k}" ${secaoDoItem(it) === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>`;
@@ -604,7 +615,7 @@ acoes.pagarSemNota = (el) => {
   const c = compraPorId(el.dataset.compra);
   abrirFolha(`<h2 class="h2">Quanto ficou a ${esc(nomeCompra(c).toLowerCase())}?</h2>
     <p class="pequeno">Use quando não der para ler a nota. Digite só o que é do plano (sem compras à parte).</p>
-    <label class="campo"><span class="rotulo">VALOR PAGO</span><input name="valor" inputmode="decimal" placeholder="${esc(R(L.somaItens(c.itens)))}"></label>
+    <label class="campo"><span class="rotulo">VALOR PAGO</span>${campoDinheiro("valor", "", `placeholder="${esc(R(L.somaItens(c.itens)))}"`)}</label>
     <button class="botao" data-acao="salvarPagoManual" data-compra="${c.id}">Salvar</button>`);
 };
 acoes.salvarPagoManual = async (el) => {
@@ -1019,7 +1030,7 @@ async function telaNovoPlano() {
       <h1 class="h1">Monte o mês de <span class="destaque">${esc(estado.casa?.nome ?? "vocês")}</span></h1>
       <p class="lead">Quatro semanas de cardápio, a compra do mês e uma compra por semana, no sábado antes do preparo de domingo. Tudo fica dentro da casa: quem você convidar vê e edita junto.</p></div>
     <div class="campos-2">
-      <label class="campo"><span class="rotulo">ORÇAMENTO DO MÊS</span><input name="orcamento" inputmode="decimal" value="${esc(String(cfg.orcamento).replace(".", ","))}"></label>
+      <label class="campo"><span class="rotulo">ORÇAMENTO DO MÊS</span>${campoDinheiro("orcamento", cfg.orcamento)}</label>
       <label class="campo"><span class="rotulo">PESSOAS</span><input name="pessoas" inputmode="numeric" value="${cfg.pessoas}"></label>
     </div>
     <label class="campo"><span class="rotulo">ESPAÇOS NO CONGELADOR</span><input name="congelador" inputmode="numeric" value="${cfg.congelador}">
@@ -1071,7 +1082,7 @@ async function telaCasa() {
       <p class="pequeno">Depois do convite, mande o link do app para a pessoa. Ela entra com o Google usando esse e-mail e cai direto nesta casa. A casa também vale no Finanças da Casa.</p></section>
     <section><div class="secao-titulo"><h2 class="h3">Plano da casa</h2></div>
       <div class="campos-2" style="margin-top:12px">
-        <label class="campo"><span class="rotulo">ORÇAMENTO</span><input name="orcamento" inputmode="decimal" value="${esc(String(cfg.orcamento).replace(".", ","))}"></label>
+        <label class="campo"><span class="rotulo">ORÇAMENTO</span>${campoDinheiro("orcamento", cfg.orcamento)}</label>
         <label class="campo"><span class="rotulo">PESSOAS</span><input name="pessoas" inputmode="numeric" value="${cfg.pessoas}"></label></div>
       <label class="campo" style="margin-top:12px"><span class="rotulo">ESPAÇOS NO CONGELADOR</span><input name="congelador" inputmode="numeric" value="${cfg.congelador}"></label>
       <p class="pequeno" style="margin-top:8px">O orçamento vale já para este mês. Pessoas muda as quantidades a partir do próximo mês.</p>
