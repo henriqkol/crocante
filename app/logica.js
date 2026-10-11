@@ -41,7 +41,7 @@ export function escalar(q, un, pessoas = 2) {
 }
 export function qtdTexto(q, un) {
   const n = Number(q);
-  if (un === "kg" && n < 1) return `${Math.round(n * 1000)} g`;
+  if (String(un).toLowerCase() === "kg" && n < 1) return `${Math.round(n * 1000)} g`;
   return `${n % 1 ? n.toLocaleString("pt-BR") : n} ${un}`;
 }
 export const valorItem = (it) => arred2(Number(it.qtd) * Number(it.preco));
@@ -322,6 +322,57 @@ export function sugerirItens(descricao, itensCompra, n = 3) {
   return res.map((x) => ({ ...x, nivel: x.nota >= 0.65 ? "alta" : x.nota > 0.45 ? "média" : "baixa" }));
 }
 
+/** Peso (em kg) da embalagem escrito na descrição da nota: "BATATA UAI 2KG" → 2, "MIST. BOLO 400G" → 0.4. */
+export function pesoDaDescricao(descricao) {
+  const m = normalizar(descricao).match(/(\d+(?:[.,]\d+)?)\s*(KG|G|GR)\b/);
+  if (!m) return null;
+  const n = Number(m[1].replace(",", "."));
+  return m[2] === "KG" ? n : n / 1000;
+}
+
+/**
+ * Quanto do item veio nas notas, na unidade do item (para mostrar planejado × comprado).
+ * Item em kg: linha em KG conta o peso; linha por unidade usa o peso da embalagem da descrição ("1KG", "700G").
+ * Linha em KG com quantidade inteira e peso na descrição ("LINGUICA 700G", 1 KG) = embalagens × peso.
+ * Item contado (un, pct, bandeja…): soma as unidades das linhas.
+ * Retorna {q, un, texto, confere} ou null; confere = true (bate), "menos", "mais" ou null (não dá para comparar).
+ */
+export function quantidadeComprada(item, linhas) {
+  const unItem = String(item.unidade ?? item.un ?? "").toLowerCase();
+  const plan = Number(item.qtd);
+  const partes = [];
+  let total = 0, mesmaUnidade = true;
+  for (const l of linhas) {
+    if (l.removido) continue;
+    const q = Number(l.qtd ?? 1) || 1;
+    const unL = String(l.un ?? "UN").toUpperCase();
+    const ehPeso = unL === "KG" || unL === "G";
+    const peso = pesoDaDescricao(l.descricao ?? "");
+    if (unItem === "kg") {
+      let kg = null;
+      if (ehPeso) kg = peso && Number.isInteger(q) && unL === "KG" ? q * peso : unL === "G" ? q / 1000 : q;
+      else if (peso) kg = q * peso;
+      if (kg == null) { mesmaUnidade = false; partes.push(`${q} ${unL.toLowerCase()}`); }
+      else { total += kg; partes.push(null); }
+    } else if (ehPeso && !(peso && Number.isInteger(q))) {
+      // item contado que veio a granel: não dá para converter
+      mesmaUnidade = false;
+      partes.push(qtdTexto(unL === "G" ? q / 1000 : q, "kg"));
+    } else { total += q; partes.push(null); }
+  }
+  if (!partes.length) return null;
+  total = unItem === "kg" ? Math.round(total * 1000) / 1000 : arred2(total);
+  if (!mesmaUnidade) {
+    const extras = partes.filter(Boolean);
+    const texto = [total ? qtdTexto(total, unItem) : null, ...extras].filter(Boolean).join(" + ");
+    return { q: null, un: unItem, texto, confere: null };
+  }
+  // tolerância: 5% no peso (balança), exato nas unidades
+  const tol = unItem === "kg" ? Math.max(0.02, plan * 0.05) : 1e-9;
+  const confere = Math.abs(total - plan) <= tol ? true : total < plan ? "menos" : "mais";
+  return { q: total, un: unItem, texto: qtdTexto(total, unItem), confere };
+}
+
 /**
  * Comparativo planejado × nota de uma compra.
  * itensCompra: [{id, nome, qtd, preco}] · linhas: [{descricao, valor, item_id, removido}]
@@ -335,7 +386,8 @@ export function compararNota(itensCompra, linhas) {
     const planejado = valorItem(it);
     if (pagoPorItem.has(it.id)) {
       const pago = pagoPorItem.get(it.id);
-      comprados.push({ id: it.id, nome: it.nome, planejado, pago, diferenca: arred2(pago - planejado) });
+      const comprado = quantidadeComprada(it, validas.filter((l) => l.item_id === it.id));
+      comprados.push({ id: it.id, nome: it.nome, planejado, pago, diferenca: arred2(pago - planejado), comprado });
     } else faltou.push({ id: it.id, nome: it.nome, planejado });
   }
   comprados.sort((a, b) => b.diferenca - a.diferenca);

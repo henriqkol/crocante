@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  quantidadeComprada, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -163,4 +163,25 @@ test("aprendizado e sugestões na nota", () => {
   const s = sugerirItens("REQUEIJ. STA. CLARA 180G", itens);
   assert.equal(s[0].item.chave, "requeijao");
   assert.equal(s[0].nivel, "alta");
+});
+
+test("quantidade comprada na unidade do item", () => {
+  const Q = (item, linhas) => quantidadeComprada(item, linhas);
+  // peso na balança
+  assert.deepEqual(Q({ qtd: 1, unidade: "kg" }, [{ descricao: "BATATA BRANCA OFERTA KG", qtd: 1.941, un: "KG" }]), { q: 1.941, un: "kg", texto: "1,941 kg", confere: "mais" });
+  // carne em três bandejas
+  const carne = Q({ qtd: 0.75, unidade: "kg" }, [0.294, 0.294, 0.238].map((q) => ({ descricao: "CARNE MOIDA II", qtd: q, un: "KG" })));
+  assert.equal(carne.q, 0.826); assert.equal(carne.texto, "826 g"); assert.equal(carne.confere, "mais");
+  // embalagem por unidade com peso na descrição
+  assert.equal(Q({ qtd: 1, unidade: "kg" }, [{ descricao: "FILEZINHO NAT 1KG IQF.SASSAMI", qtd: 1, un: "UN" }]).confere, true);
+  // nota diz 1 KG mas é um pacote de 700 g
+  assert.equal(Q({ qtd: 0.5, unidade: "kg" }, [{ descricao: "LINGUICA AURORA 700G FGO.", qtd: 1, un: "KG" }]).texto, "700 g");
+  assert.equal(Q({ qtd: 1.5, unidade: "kg" }, [{ descricao: "SOBRECOXA NAT 1KG IQF", qtd: 1, un: "KG" }]).confere, "menos");
+  assert.equal(Q({ qtd: 0.25, unidade: "Kg" }, [{ descricao: "TOMATE RASTEIRO MIUDO KG", qtd: 0.268, un: "KG" }]).confere, true);
+  // contados
+  assert.equal(Q({ qtd: 2, unidade: "caixinhas" }, [{ descricao: "CR.LEITE CCGL 200G TP", qtd: 1, un: "UN" }]).confere, "menos");
+  assert.deepEqual(Q({ qtd: 2, unidade: "bandeja" }, [{ descricao: "OVOS FILIPPSEN 20UN.BRANCO", qtd: 2, un: "UN" }]), { q: 2, un: "bandeja", texto: "2 bandeja", confere: true });
+  // contado que veio a granel: mostra o peso, sem comparar
+  assert.deepEqual(Q({ qtd: 1, unidade: "pct" }, [{ descricao: "PAO FRANCES KG", qtd: 0.42, un: "KG" }]), { q: null, un: "pct", texto: "420 g", confere: null });
+  assert.equal(Q({ qtd: 1, unidade: "kg" }, []), null);
 });

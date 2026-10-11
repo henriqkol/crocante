@@ -457,6 +457,7 @@ async function telaCompras(n) {
   const cap = estado.config.congelador;
   const grupos = SECOES.map(([k, nome]) => [nome, c.itens.filter((i) => secaoDoItem(i) === k).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))]).filter(([, its]) => its.length);
   const pagos = pagoPorItem(c.id);
+  const linhasItem = linhasPorItem(c.id);
   const pagoGrupo = (its) => its.reduce((s, i) => s + (pagos.get(i.id) ?? 0), 0);
   const sub = ehSemana
     ? `Sáb ${L.dataCurta(c.data)}, véspera do preparo de domingo ${L.dataCurta(L.addDias(c.data, 1))}. Só o que essa semana usa.`
@@ -487,7 +488,8 @@ async function telaCompras(n) {
       <div>${its.map((i) => `<label class="check ${i.marcado ? "feito" : ""}">
         <input type="checkbox" data-muda="marcar" data-id="${i.id}" ${i.marcado ? "checked" : ""}>
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span class="nome">${i.coringa ? `<span class="asterisco" style="font-size:15px">* </span>` : ""}${esc(i.nome)}</span>
-          <span class="mono" style="font-size:11px;color:var(--fg-mute)">${esc(L.qtdTexto(i.qtd, i.unidade))} · ${R(i.preco)}${i.marcado && i.marcado_por && i.marcado_por !== estado.email ? ` · ${esc(i.marcado_por.split("@")[0])}` : ""}</span></span>
+          <span class="mono" style="font-size:11px;color:var(--fg-mute)">${esc(L.qtdTexto(i.qtd, i.unidade))} · ${R(i.preco)}${i.marcado && i.marcado_por && i.marcado_por !== estado.email ? ` · ${esc(i.marcado_por.split("@")[0])}` : ""}</span>
+          ${linhasItem.has(i.id) ? linhaComprado(L.quantidadeComprada(i, linhasItem.get(i.id))) : ""}</span>
         <button type="button" class="editar" data-acao="editarItem" data-id="${i.id}" aria-label="Editar ${esc(i.nome)}" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
           <span>${R(L.valorItem(i))}</span>${pagos.has(i.id) ? `<span style="font-size:12px;color:${pagos.get(i.id) > L.valorItem(i) + 0.005 ? "var(--signal-2)" : "var(--fg)"}">pago ${R(pagos.get(i.id))}</span>` : notasDaCompra(c.id).length ? `<span style="font-size:11px;color:var(--fg-mute)">não veio na nota</span>` : ""}</button>
       </label>`).join("")}</div></section>`).join("")}
@@ -511,6 +513,21 @@ function pagoPorItem(compraId) {
     if (l.item_id && !l.removido) m.set(l.item_id, L.arred2((m.get(l.item_id) ?? 0) + Number(l.valor)));
   }
   return m;
+}
+/** Linhas de nota ligadas a cada item da compra (para a quantidade comprada). */
+function linhasPorItem(compraId) {
+  const m = new Map();
+  for (const n of notasDaCompra(compraId)) for (const l of n.linhas ?? []) {
+    if (l.item_id && !l.removido) (m.get(l.item_id) ?? m.set(l.item_id, []).get(l.item_id)).push(l);
+  }
+  return m;
+}
+/** "comprou 1,94 kg" abaixo da quantidade planejada; vermelho quando veio menos, ✓ quando bate. */
+function linhaComprado(cq) {
+  if (!cq) return "";
+  const cor = cq.confere === "menos" ? "var(--signal-2)" : cq.confere === true ? "var(--fg-mute)" : "var(--fg-dim)";
+  const sinal = cq.confere === true ? " ✓" : cq.confere === "menos" ? " · veio menos" : cq.confere === "mais" ? " · veio mais" : "";
+  return `<span class="mono" style="font-size:11px;color:${cor}">comprou ${esc(cq.texto)}${sinal}</span>`;
 }
 function itemPorId(id) { for (const c of estado.compras) { const i = c.itens.find((x) => x.id === id); if (i) return [c, i]; } return [null, null]; }
 mudancas.marcar = async (el) => {
@@ -901,7 +918,7 @@ function telaComparar() {
     ${cmp.comprados.length ? `<section style="display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 class="h2">Item a item</h2><span class="rotulo">− BARATO · CARO +</span></div>
       <div class="lista">${cmp.comprados.map((x) => { const w = Math.max(4, (Math.abs(x.diferenca) / max) * 100); const sobe = x.diferenca > 0; return `<div style="display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--line)">
-        <div style="display:flex;justify-content:space-between;gap:10px"><span style="font-size:15px">${esc(x.nome)}</span><span class="mono" style="font-size:13px;color:${sobe ? "var(--signal-2)" : "var(--fg-dim)"}">${sobe ? "+" : x.diferenca < 0 ? "−" : ""}${R(Math.abs(x.diferenca))}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:10px"><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:15px">${esc(x.nome)}</span>${(() => { const it = c.itens.find((y) => y.id === x.id); return it ? `<span class="mono" style="font-size:11px;color:var(--fg-mute)">planejado ${esc(L.qtdTexto(it.qtd, it.unidade))}</span>${linhaComprado(x.comprado)}` : ""; })()}</span><span class="mono" style="font-size:13px;color:${sobe ? "var(--signal-2)" : "var(--fg-dim)"}">${sobe ? "+" : x.diferenca < 0 ? "−" : ""}${R(Math.abs(x.diferenca))}</span></div>
         <div style="display:flex;align-items:center;gap:10px"><div class="diverge" aria-hidden="true"><div>${!sobe ? `<i style="width:${w}%;background:var(--fg-dim)"></i>` : ""}</div><span class="meio"></span><div>${sobe ? `<i style="width:${w}%;background:var(--signal)"></i>` : ""}</div></div>
         <span class="mono" style="font-size:11px;color:var(--fg-mute);white-space:nowrap">${R(x.planejado)} → ${R(x.pago)}</span></div></div>`; }).join("")}</div></section>` : ""}
     ${cmp.extras.length ? `<section class="caixa"><span class="rotulo">CONTAM NO PLANO SEM PAR NA LISTA · ${R(cmp.extrasTotal)}</span><ul class="simples">${cmp.extras.map((l) => `<li>${esc(l.descricao)} · ${R(l.valor)}</li>`).join("")}</ul>
