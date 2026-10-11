@@ -93,3 +93,42 @@ export const LOCAIS = {
   d: "Despensa",
   h: "Higiene e limpeza",
 };
+
+// Seções do mercado, na ordem de uma volta pelo supermercado. A lista de compras é agrupada por elas
+// (o `local` continua dizendo onde o item é guardado em casa, para o medidor do congelador).
+export const SECOES = [
+  ["hortifruti", "Hortifrúti e ovos"],
+  ["padaria", "Padaria"],
+  ["acougue", "Açougue"],
+  ["frios", "Frios e refrigerados"],
+  ["congelados", "Congelados"],
+  ["leite", "Leite e caixinhas"],
+  ["mercearia", "Mercearia"],
+  ["molhos", "Molhos e temperos"],
+  ["doces", "Doces, biscoitos e lanches"],
+  ["bebidas", "Bebidas"],
+  ["higiene", "Higiene"],
+  ["limpeza", "Limpeza"],
+];
+export const SECAO_DO_ITEM = {
+  batata: "hortifruti", limao: "hortifruti", ovos: "hortifruti",
+  pao: "padaria", tortilha: "padaria",
+  peito: "acougue", sobrecoxa: "acougue", carne: "acougue", linguica: "acougue",
+  salsicha: "frios", presunto: "frios", mussarela: "frios", requeijao: "frios", margarina: "frios", bacon: "frios", parmesao: "frios",
+  nuggets: "congelados", "batata-frita": "congelados",
+  leite: "leite", "creme-leite": "leite", "leite-condensado": "leite",
+  arroz: "mercearia", feijao: "mercearia", macarrao: "mercearia", "farinha-trigo": "mercearia", "farinha-rosca": "mercearia",
+  "farinha-mandioca": "mercearia", flocao: "mercearia", "corn-flakes": "mercearia", polvilho: "mercearia", acucar: "mercearia",
+  cafe: "mercearia", oleo: "mercearia", sal: "mercearia", "batata-palha": "mercearia",
+  ketchup: "molhos", maionese: "molhos", mostarda: "molhos", barbecue: "molhos", "molho-tomate": "molhos", temperos: "molhos",
+  "chocolate-po": "doces", achocolatado: "doces", "chocolate-barra": "doces", maisena: "doces", recheado: "doces",
+  pipoca: "doces", salgadinho: "doces", amendoim: "doces",
+  refri: "bebidas", maracuja: "bebidas", "suco-po": "bebidas",
+  "papel-hig": "higiene", sabonete: "higiene", shampoo: "higiene", condicionador: "higiene", "creme-dental": "higiene",
+  desodorante: "higiene", escova: "higiene", "fio-dental": "higiene",
+  detergente: "limpeza", "sabao-liquido": "limpeza", amaciante: "limpeza", sanitaria: "limpeza", desinfetante: "limpeza",
+  multiuso: "limpeza", esponjas: "limpeza", "saco-lixo": "limpeza", pano: "limpeza", "papel-toalha": "limpeza", saquinhos: "limpeza",
+};
+const SECAO_POR_LOCAL = { c: "congelados", g: "frios", d: "mercearia", h: "limpeza" };
+/** Seção do mercado de um item: a escolhida à mão, a do modelo ou uma pelo lugar onde é guardado. */
+export const secaoDoItem = (it) => it.secao || SECAO_DO_ITEM[it.chave] || SECAO_POR_LOCAL[it.local] || "mercearia";

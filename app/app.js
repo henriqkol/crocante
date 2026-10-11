@@ -4,7 +4,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, FUNCAO, VERSAO } from "./config.js";
 import { iniciarLeitor } from "./scanner.js";
 import * as L from "./logica.js";
 import { PRATOS, RECEITAS, PREPARO, COMO, SORTEIO, CAFE, LANCHE, DOCES, DICAS, TIPO, CAT } from "./dados.js";
-import { LOCAIS } from "./compras.js";
+import { LOCAIS, SECOES, secaoDoItem } from "./compras.js";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
@@ -437,7 +437,9 @@ async function telaCompras(n) {
   const ehSemana = c.tipo === "semana";
   const ocupado = ehSemana ? L.congeladorDaSemana(c.semana - 1, c.itens, planoParaLogica()) : 0;
   const cap = estado.config.congelador;
-  const grupos = Object.keys(LOCAIS).map((loc) => [loc, c.itens.filter((i) => i.local === loc)]).filter(([, its]) => its.length);
+  const grupos = SECOES.map(([k, nome]) => [nome, c.itens.filter((i) => secaoDoItem(i) === k).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))]).filter(([, its]) => its.length);
+  const pagos = pagoPorItem(c.id);
+  const pagoGrupo = (its) => its.reduce((s, i) => s + (pagos.get(i.id) ?? 0), 0);
   const sub = ehSemana
     ? `Sáb ${L.dataCurta(c.data)}, véspera do preparo de domingo ${L.dataCurta(L.addDias(c.data, 1))}. Só o que essa semana usa.`
     : `Sáb ${L.dataCurta(c.data)}, junto com a semana 1. Itens que duram o mês inteiro.`;
@@ -461,13 +463,14 @@ async function telaCompras(n) {
       <div class="celulas ${ocupado >= cap - 1 ? "lotado" : ""}" style="--n:${cap}" aria-hidden="true">${Array.from({ length: cap }, (_, i) => `<span class="${i < ocupado ? "cheia" : ""}"></span>`).join("")}</div>
       <span class="pequeno">${notaFreezer} Bases que o cardápio desta semana manda congelar, o que já vem congelado e o bacon do mês.</span></section>`
     : `<div class="caixa pequeno">Só o que dura o mês todo fora da geladeira. O bacon vem em cubos e ocupa 1 espaço no congelador até o fim do mês.</div>`}
-    ${grupos.map(([loc, its]) => `<section>
-      <div class="secao-titulo"><h2 class="h3">${esc(LOCAIS[loc])}</h2><span class="mono pequeno">${R(L.somaItens(its))}</span></div>
+    ${grupos.map(([nomeSecao, its]) => `<section>
+      <div class="secao-titulo"><h2 class="h3">${esc(nomeSecao)}</h2><span style="display:flex;flex-direction:column;align-items:flex-end"><span class="mono pequeno">${R(L.somaItens(its))}</span>${pagos.size && its.some((i) => pagos.has(i.id)) ? `<span class="mono" style="font-size:11px;color:var(--fg-mute)">pago ${R(pagoGrupo(its))}</span>` : ""}</span></div>
       <div>${its.map((i) => `<label class="check ${i.marcado ? "feito" : ""}">
         <input type="checkbox" data-muda="marcar" data-id="${i.id}" ${i.marcado ? "checked" : ""}>
         <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span class="nome">${i.coringa ? `<span class="asterisco" style="font-size:15px">* </span>` : ""}${esc(i.nome)}</span>
           <span class="mono" style="font-size:11px;color:var(--fg-mute)">${esc(L.qtdTexto(i.qtd, i.unidade))} · ${R(i.preco)}${i.marcado && i.marcado_por && i.marcado_por !== estado.email ? ` · ${esc(i.marcado_por.split("@")[0])}` : ""}</span></span>
-        <button type="button" class="editar" data-acao="editarItem" data-id="${i.id}" aria-label="Editar ${esc(i.nome)}">${R(L.valorItem(i))}</button>
+        <button type="button" class="editar" data-acao="editarItem" data-id="${i.id}" aria-label="Editar ${esc(i.nome)}" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+          <span>${R(L.valorItem(i))}</span>${pagos.has(i.id) ? `<span style="font-size:12px;color:${pagos.get(i.id) > L.valorItem(i) + 0.005 ? "var(--signal-2)" : "var(--fg)"}">pago ${R(pagos.get(i.id))}</span>` : notasDaCompra(c.id).length ? `<span style="font-size:11px;color:var(--fg-mute)">não veio na nota</span>` : ""}</button>
       </label>`).join("")}</div></section>`).join("")}
     <div class="pilulas"><button class="pilula" data-acao="novoItem" data-compra="${c.id}">+ Adicionar item</button>
       ${c.pago == null ? `<button class="pilula" data-acao="pagarSemNota" data-compra="${c.id}">Já paguei, sem nota</button>` : `<button class="pilula" data-acao="desfazerPago" data-compra="${c.id}">Reabrir compra</button>`}</div>
@@ -480,6 +483,14 @@ async function telaCompras(n) {
   <div class="rodape-fixo"><a class="botao" href="#escanear/${c.id}">${notasDaCompra(c.id).length ? "Adicionar outra nota" : "Escanear a nota desta compra"}</a></div>`;
 }
 acoes.irCompra = (el) => ir(`#compras/${el.dataset.n}`);
+/** Quanto cada item da compra custou nas notas salvas (soma das linhas ligadas a ele). */
+function pagoPorItem(compraId) {
+  const m = new Map();
+  for (const n of notasDaCompra(compraId)) for (const l of n.linhas ?? []) {
+    if (l.item_id && !l.removido) m.set(l.item_id, L.arred2((m.get(l.item_id) ?? 0) + Number(l.valor)));
+  }
+  return m;
+}
 function itemPorId(id) { for (const c of estado.compras) { const i = c.itens.find((x) => x.id === id); if (i) return [c, i]; } return [null, null]; }
 mudancas.marcar = async (el) => {
   const [, it] = itemPorId(el.dataset.id);
@@ -499,12 +510,13 @@ function formItem(it = {}) {
     <div class="campos-2">
       <label class="campo"><span class="rotulo">PREÇO POR UNIDADE</span><input name="preco" inputmode="decimal" value="${esc(String(it.preco ?? "").replace(".", ","))}"></label>
       <label class="campo"><span class="rotulo">ONDE GUARDA</span><select name="local">${Object.entries(LOCAIS).map(([k, v]) => `<option value="${k}" ${it.local === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
-    </div>`;
+    </div>
+    <label class="campo"><span class="rotulo">SEÇÃO DO MERCADO</span><select name="secao">${SECOES.map(([k, v]) => `<option value="${k}" ${secaoDoItem(it) === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>`;
 }
 const numero = (s) => Number(String(s ?? "").replace(/\./g, "").replace(",", "."));
 function lerFormItem() {
   const f = folha;
-  const dados = { nome: $("[name=nome]", f).value.trim(), qtd: numero($("[name=qtd]", f).value), unidade: $("[name=unidade]", f).value.trim() || "un", preco: numero($("[name=preco]", f).value), local: $("[name=local]", f).value };
+  const dados = { nome: $("[name=nome]", f).value.trim(), qtd: numero($("[name=qtd]", f).value), unidade: $("[name=unidade]", f).value.trim() || "un", preco: numero($("[name=preco]", f).value), local: $("[name=local]", f).value, secao: $("[name=secao]", f).value };
   if (!dados.nome) throw new Error("Dê um nome ao item.");
   if (!(dados.qtd > 0)) throw new Error("A quantidade precisa ser maior que zero.");
   if (!(dados.preco >= 0)) throw new Error("Confira o preço.");
@@ -798,7 +810,7 @@ acoes.trocarVinculo = (el) => {
   abrirFolha(`<h2 class="h2">Qual item da lista é este?</h2><p class="mono pequeno">${esc(l.descricao)} · ${R(l.valor)}</p>
     ${sug.length ? `<div><span class="rotulo">MAIS PARECIDOS</span><div class="lista" style="margin-top:6px">${sug.map((s) => botaoItem(s.item, ` · semelhança ${s.nivel}`)).join("")}</div></div>` : ""}
     <button class="linha" data-acao="foraDoPlano" data-i="${i}"><span class="cresce"><span>Não é do plano</span><span class="pequeno">Não conta no orçamento (compra à parte)</span></span></button>
-    <div><span class="rotulo">TODOS OS ITENS DA ${esc(nomeCompra(c).toUpperCase())}</span><div class="lista" style="margin-top:6px">${c.itens.filter((it) => !idsSug.has(it.id)).map((it) => botaoItem(it)).join("")}</div></div>
+    <div><span class="rotulo">TODOS OS ITENS DA ${esc(nomeCompra(c).toUpperCase())}</span><div class="lista" style="margin-top:6px">${c.itens.filter((it) => !idsSug.has(it.id)).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((it) => botaoItem(it)).join("")}</div></div>
     <p class="pequeno">A escolha vale para as próximas notas: quando aparecer “${esc(L.chaveTexto(l.descricao))}”, o app já liga sozinho.</p>`);
 };
 acoes.ligarA = (el) => mudarLinha(Number(el.dataset.i), { item_id: el.dataset.id, removido: false });
