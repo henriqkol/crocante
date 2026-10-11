@@ -1,6 +1,6 @@
 // Service worker: permite instalar o app, abrir sem internet e receber os lembretes.
 // Estratégia "rede primeiro": com internet, sempre pega a versão mais nova.
-const CACHE = "crocante-v4";
+const CACHE = "crocante-v5";
 const BASICO = ["./", "index.html", "estilo.css", "app.js", "logica.js", "dados.js", "compras.js", "scanner.js", "config.js", "manifest.webmanifest",
   "icons/crocante-192.png", "icons/badge-96.png", "icons/favicon-64.png", "vendor/jsQR.min.js",
   "fonts/doto-latin-900-normal.woff2", "fonts/space-grotesk-latin-400-normal.woff2", "fonts/space-grotesk-latin-500-normal.woff2",

@@ -451,3 +451,75 @@ export function lembretes(hoje, momento, plano) {
 export function fraseSorteio(v) {
   return `${v[1][0].toUpperCase() + v[1].slice(1)} com ${v[0]}, ${v[2]} e ${v[3]}, ${v[4]}.`;
 }
+
+// ------------------------------------------------------------------ mercados
+/** CNPJ do emitente que vem dentro da chave de acesso da NFC-e (dígitos 7 a 20). */
+export function cnpjDaChave(chave) {
+  const d = String(chave ?? "").replace(/\D/g, "");
+  return d.length === 44 ? d.slice(6, 20) : null;
+}
+/** Identidade do mercado de uma nota: o CNPJ; sem chave, o nome normalizado. */
+export const mercadoDaNota = (n) => cnpjDaChave(n.chave) ?? "nome:" + normalizar(n.emitente ?? "MERCADO").trim();
+export function cnpjTexto(c) {
+  return /^\d{14}$/.test(c ?? "") ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}` : "";
+}
+
+/**
+ * Ranking de mercados pelas notas da casa.
+ * notas: [{id, chave, emitente, emissao, total, conta_no_plano, linhas}] · itens: Map id → {chave, nome, qtd, unidade, preco}
+ * Índice de preço = quanto você pagaria lá pelos mesmos produtos, comparado a uma referência (1 = igual, 0,9 = 10% mais barato):
+ * - "cesta": produtos comprados em 2+ mercados; referência = média dos mercados para aquele produto (vale quando
+ *   pelo menos 2 mercados têm 3+ produtos em comum).
+ * - "plano": enquanto não há produtos em comum, compara com o preço planejado de cada item (mesma régua para todos).
+ * Os dois ponderam pelo valor gasto e usam o preço por kg/unidade (quantidadeComprada).
+ */
+export function rankingMercados(notas, itens, apelidos = {}, minComuns = 3) {
+  const mercados = new Map();
+  const precos = new Map(); // produto → Map mercado → {valor, q}
+  for (const n of notas) {
+    const id = mercadoDaNota(n);
+    const m = mercados.get(id) ?? { id, nome: n.emitente ?? "Mercado", cnpj: cnpjDaChave(n.chave), notas: [], total: 0, pagoPlano: 0, basePlano: 0, nPlano: 0 };
+    mercados.set(id, m);
+    m.notas.push(n);
+    m.total += Number(n.total ?? n.conta_no_plano ?? 0);
+    const porItem = new Map();
+    for (const l of n.linhas ?? []) if (l.item_id && !l.removido) (porItem.get(l.item_id) ?? porItem.set(l.item_id, []).get(l.item_id)).push(l);
+    for (const [itemId, ls] of porItem) {
+      const it = itens.get(itemId);
+      if (!it) continue;
+      const cq = quantidadeComprada(it, ls);
+      if (!cq || !(cq.q > 0)) continue;
+      const valor = ls.reduce((s, l) => s + Number(l.valor), 0);
+      if (Number(it.preco) > 0) { m.pagoPlano += valor; m.basePlano += cq.q * Number(it.preco); m.nPlano++; }
+      const produto = destinoDoItem(it) + "|" + String(it.unidade ?? "").toLowerCase();
+      const pm = precos.get(produto) ?? precos.set(produto, new Map()).get(produto);
+      const p = pm.get(id) ?? pm.set(id, { valor: 0, q: 0, nome: it.nome, un: String(it.unidade ?? "").toLowerCase() }).get(id);
+      p.valor += valor; p.q += cq.q;
+    }
+  }
+  // cesta comum
+  for (const m of mercados.values()) { m.cestaPago = 0; m.cestaRef = 0; m.comuns = []; }
+  for (const [, pm] of precos) {
+    if (pm.size < 2) continue;
+    const unit = [...pm.entries()].map(([id, p]) => [id, p.valor / p.q, p]);
+    const ref = unit.reduce((s, [, u]) => s + u, 0) / unit.length;
+    for (const [id, u, p] of unit) {
+      const m = mercados.get(id);
+      m.cestaPago += p.valor; m.cestaRef += p.q * ref;
+      m.comuns.push({ nome: p.nome, un: p.un, preco: arred2(u), referencia: arred2(ref), outros: unit.filter(([o]) => o !== id).map(([o, uo]) => ({ mercado: o, preco: arred2(uo) })) });
+    }
+  }
+  const lista = [...mercados.values()].map((m) => {
+    m.notas.sort((a, b) => String(b.emissao ?? "").localeCompare(String(a.emissao ?? "")));
+    return {
+      id: m.id, nome: m.nome, apelido: apelidos[m.id] ?? null, cnpj: m.cnpj, notas: m.notas, visitas: m.notas.length,
+      total: arred2(m.total), ultima: m.notas[0]?.emissao ?? null,
+      indicePlano: m.basePlano ? m.pagoPlano / m.basePlano : null, itensPlano: m.nPlano,
+      indiceCesta: m.comuns.length >= minComuns && m.cestaRef ? m.cestaPago / m.cestaRef : null, comuns: m.comuns,
+    };
+  });
+  const modo = lista.filter((m) => m.indiceCesta != null).length >= 2 ? "cesta" : "plano";
+  const chave = modo === "cesta" ? "indiceCesta" : "indicePlano";
+  lista.sort((a, b) => (a[chave] ?? Infinity) - (b[chave] ?? Infinity) || b.total - a.total);
+  return { modo, mercados: lista.map((m) => ({ ...m, indice: m[chave] })) };
+}

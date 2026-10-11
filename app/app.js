@@ -118,7 +118,7 @@ async function carregarTudo() {
     ?? [...planos].filter((p) => p.inicio > h).sort((a, b) => a.inicio.localeCompare(b.inicio))[0]
     ?? planos[0] ?? null;
   estado.plano = atual;
-  estado.compras = []; estado.cardapio = []; estado.notas = [];
+  estado.compras = []; estado.cardapio = []; estado.notas = []; estado.mercados = null;
   if (!atual) return;
   const [compras, cardapio] = await Promise.all([
     q(sb.from("croc_compras").select("*, croc_itens!croc_itens_compra_id_fkey(*)").eq("plano_id", atual.id)),
@@ -191,7 +191,7 @@ function rotaAtual() {
   return { nome: partes[0], args: partes.slice(1) };
 }
 const TELAS_SEM_ABAS = new Set(["escanear", "nota", "comparar", "novo-plano", "prato", "casa", "avisos"]);
-const ABA_DA_TELA = { hoje: "hoje", semana: "semana", compras: "compras", ideias: "ideias", grana: "grana" };
+const ABA_DA_TELA = { hoje: "hoje", semana: "semana", compras: "compras", ideias: "ideias", grana: "grana", mercado: "grana" };
 let pararCamera = null;
 let vezDesenho = 0; // cada desenho tem um número: telas que esperam a rede não pintam por cima da tela seguinte
 async function desenhar() {
@@ -204,7 +204,7 @@ async function desenhar() {
   for (const a of abas.querySelectorAll("a")) {
     if (a.dataset.aba === ABA_DA_TELA[nome]) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
-  const telas = { hoje: telaHoje, semana: telaSemana, prato: telaPrato, compras: telaCompras, ideias: telaIdeias, grana: telaGrana,
+  const telas = { hoje: telaHoje, semana: telaSemana, prato: telaPrato, compras: telaCompras, ideias: telaIdeias, grana: telaGrana, mercado: telaMercado,
     escanear: telaEscanear, nota: telaNota, comparar: telaComparar, casa: telaCasa, avisos: telaAvisos, "novo-plano": telaNovoPlano };
   const tela = telas[nome] ?? telaHoje;
   if (!estado.plano && !["novo-plano", "casa", "avisos", "ideias", "prato"].includes(nome)) return telaNovoPlano();
@@ -720,11 +720,131 @@ async function telaGrana() {
       </a>`; }).join("")}</div>
     </section>
     <a class="botao" href="#escanear">Escanear nota da compra</a>
+    <section id="mercados"><div class="secao-titulo"><h2 class="h3">Mercados</h2><span class="rotulo">RANKING DE PREÇO</span></div>
+      ${estado.mercados ? htmlMercados() : `<p class="pequeno">Carregando as notas…</p>`}</section>
     <section class="papel"><span class="rotulo">SE PRECISAR CORTAR</span>
       <p style="font-size:15px">Tire das próximas semanas o refrigerante e os nuggets prontos (faça os caseiros). <b style="font-weight:600">Batata palha, ketchup e queijo ficam.</b></p></section>
     <a class="link-mono" href="#casa">AJUSTAR ORÇAMENTO E PESSOAS ↗</a>
   </div>`;
+  const v = vezDesenho;
+  try {
+    await carregarMercados();
+    if (v === vezDesenho && $("#mercados")) $("#mercados").innerHTML = `<div class="secao-titulo"><h2 class="h3">Mercados</h2><span class="rotulo">RANKING DE PREÇO</span></div>${htmlMercados()}`;
+  } catch (e) { if (v === vezDesenho && $("#mercados") && !estado.mercados) $("#mercados").insertAdjacentHTML("beforeend", `<p class="pequeno">${esc(e.message)}</p>`); }
 }
+
+// ------------------------------------------------------------------ MERCADOS (ranking e notas de cada um)
+/** Todas as notas da casa (de todos os planos) e os itens ligados a elas, para o ranking. */
+async function carregarMercados() {
+  const [notas, apelidos] = await Promise.all([
+    q(sb.from("croc_notas").select("id, compra_id, chave, emitente, emissao, total, conta_no_plano, linhas, croc_compras(tipo, semana, data)").order("emissao", { ascending: false })),
+    q(sb.from("croc_mercados").select("mercado, apelido")).catch(() => []),
+  ]);
+  const itens = new Map();
+  for (const c of estado.compras) for (const i of [...c.itens, ...(c.movidos ?? [])]) itens.set(i.id, i);
+  const faltam = [...new Set(notas.flatMap((n) => (n.linhas ?? []).map((l) => l.item_id)).filter((id) => id && !itens.has(id)))];
+  for (let k = 0; k < faltam.length; k += 100) {
+    for (const i of await q(sb.from("croc_itens").select("id, chave, nome, qtd, unidade, preco").in("id", faltam.slice(k, k + 100)))) itens.set(i.id, i);
+  }
+  const ap = Object.fromEntries(apelidos.map((a) => [a.mercado, a.apelido]));
+  estado.mercados = { ...L.rankingMercados(notas, itens, ap), apelidos: ap, itens };
+}
+const nomeMercado = (m) => m.apelido || m.nome;
+const nomeMercadoPorId = (id) => { const m = estado.mercados?.mercados.find((x) => x.id === id); return m ? nomeMercado(m) : "outro mercado"; };
+function indiceTexto(i) {
+  if (i == null) return "—";
+  const p = (i - 1) * 100;
+  if (Math.abs(p) < 0.05) return "0%";
+  return `${p > 0 ? "+" : "−"}${Math.abs(p).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+}
+const corIndice = (i) => (i == null ? "var(--fg-mute)" : i > 1.0005 ? "var(--signal-2)" : "var(--fg)");
+function nomeDaCompraDaNota(n) {
+  const c = compraPorId(n.compra_id);
+  if (c) return nomeCompra(c);
+  const x = n.croc_compras;
+  return x ? `${nomeCompra(x)} · ${nomeMes(x.data)}` : "compra apagada";
+}
+function htmlMercados() {
+  const { modo, mercados } = estado.mercados;
+  if (!mercados.length) return `<p class="pequeno">Os mercados aparecem aqui depois da primeira nota escaneada.</p>`;
+  const ref = modo === "cesta" ? "VS MÉDIA" : "VS PLANO";
+  const explica = modo === "cesta"
+    ? "Índice de preço: quanto os mesmos produtos custam em cada mercado (por kg ou unidade), comparado à média entre os mercados. Negativo = mais barato."
+    : `Ainda não há produtos iguais comprados em dois mercados, então o índice compara cada mercado com o preço planejado (a mesma régua para todos), por kg ou unidade. Quando 2 mercados tiverem ${3} produtos em comum, o ranking passa a comparar um mercado com o outro.`;
+  return `<div class="lista">${mercados.map((m, k) => `<a class="linha" href="#mercado/${encodeURIComponent(m.id)}">
+      <span class="mono" style="font-size:13px;color:var(--fg-mute);min-width:22px">${String(k + 1).padStart(2, "0")}</span>
+      <span class="cresce"><span>${esc(nomeMercado(m))}</span><span class="pequeno">${m.apelido ? `${esc(m.nome)} · ` : ""}${pl(m.visitas, "nota", "notas")}${m.ultima ? ` · última ${L.dataCurta(m.ultima.slice(0, 10))}` : ""}</span></span>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="mono" style="font-size:15px;color:${corIndice(m.indice)}">${indiceTexto(m.indice)}</span><span class="rotulo">${m.indice == null ? "SEM COMPARAÇÃO" : ref}</span></span>
+    </a>`).join("")}</div>
+    <p class="pequeno" style="margin-top:8px">${explica}</p>`;
+}
+
+async function telaMercado(idCod) {
+  const id = decodeURIComponent(idCod ?? "");
+  if (!estado.mercados) {
+    app.innerHTML = `${topo({ voltar: "#grana", titulo: "MERCADO" })}<div class="carregando-tela"><div class="spinner"></div></div>`;
+    const v = vezDesenho;
+    await carregarMercados();
+    if (v !== vezDesenho) return;
+  }
+  const { modo, mercados } = estado.mercados;
+  const k = mercados.findIndex((x) => x.id === id);
+  const m = mercados[k];
+  if (!m) return ir("#grana");
+  const ref = modo === "cesta" ? "vs média dos mercados" : "vs preço planejado";
+  app.innerHTML = `${topo({ voltar: "#grana", titulo: "MERCADO" })}<div class="conteudo">
+    <div class="cabeca"><div class="eyebrow">${k + 1}º NO RANKING DE ${mercados.length}</div>
+      <h1 class="h2">${esc(nomeMercado(m))}</h1>
+      <p class="pequeno">${m.apelido ? `Na nota: ${esc(m.nome)}<br>` : ""}${m.cnpj ? `CNPJ ${L.cnpjTexto(m.cnpj)}` : ""}</p>
+      <div class="pilulas"><button class="pilula" data-acao="apelidarMercado" data-id="${esc(m.id)}">${m.apelido ? "Trocar apelido" : "Dar um apelido"}</button></div>
+      <div class="grade">
+        <div><span class="rotulo">ÍNDICE DE PREÇO</span><span class="numero m" style="color:${corIndice(m.indice)}">${indiceTexto(m.indice)}</span><span class="pequeno">${m.indice == null ? "sem itens para comparar" : `${ref}, ${pl(modo === "cesta" ? m.comuns.length : m.itensPlano, "produto", "produtos")}`}</span></div>
+        <div><span class="rotulo">GASTO TOTAL</span><span class="numero m">${R(m.total).replace("R$ ", "R$")}</span><span class="pequeno">${pl(m.visitas, "nota", "notas")}</span></div>
+      </div>
+    </div>
+    ${m.comuns.length ? `<section><div class="secao-titulo"><h2 class="h3">Em outros mercados</h2><span class="rotulo">PREÇO AQUI</span></div>
+      <div class="lista">${m.comuns.sort((a, b) => b.preco / b.referencia - a.preco / a.referencia).map((c) => `<div class="linha"><span class="cresce"><span>${esc(c.nome)}</span>
+        <span class="pequeno">${c.outros.map((o) => `${esc(nomeMercadoPorId(o.mercado))} ${R(o.preco)}`).join(" · ")}</span></span>
+        <span class="mono" style="font-size:14px;color:${c.preco > c.referencia + 0.005 ? "var(--signal-2)" : "var(--fg)"}">${R(c.preco)}<span style="font-size:11px;color:var(--fg-mute)">/${esc(c.un)}</span></span></div>`).join("")}</div></section>` : ""}
+    <section><div class="secao-titulo"><h2 class="h3">Notas deste mercado</h2><span class="mono pequeno">${R(m.total)}</span></div>
+      <div class="lista">${m.notas.map((n) => `<button class="linha" data-acao="verNota" data-id="${n.id}" data-mercado="${esc(m.id)}">
+        <span class="cresce"><span>${n.emissao ? `${L.DIAS_CURTOS[L.diaSemana(n.emissao.slice(0, 10))]} ${L.dataCurta(n.emissao.slice(0, 10))}` : "Sem data"}</span><span class="pequeno">${esc(nomeDaCompraDaNota(n))} · ${pl((n.linhas ?? []).length, "item", "itens")}</span></span>
+        <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="valor" style="color:var(--fg)">${R(n.total)}</span><span class="rotulo">VER ↗</span></span></button>`).join("")}</div></section>
+  </div>`;
+}
+acoes.verNota = (el) => {
+  const m = estado.mercados?.mercados.find((x) => x.id === el.dataset.mercado);
+  const n = m?.notas.find((x) => x.id === el.dataset.id);
+  if (!n) return;
+  const itens = estado.mercados.itens;
+  const daCompraAtual = !!compraPorId(n.compra_id);
+  abrirFolha(`<h2 class="h2">${esc(nomeMercado(m))}</h2>
+    <p class="pequeno">${n.emissao ? new Date(n.emissao).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) + " · " : ""}${esc(nomeDaCompraDaNota(n))}</p>
+    <div class="lista">${(n.linhas ?? []).map((l) => `<div class="linha" style="${l.removido ? "opacity:.6" : ""}"><span class="cresce"><span class="${l.removido ? "riscado" : ""}" style="font-size:14px">${esc(l.descricao)}</span>
+      <span class="pequeno">${l.qtd != null ? `${String(l.qtd).replace(".", ",")} ${esc(String(l.un ?? "").toLowerCase())} · ` : ""}${l.removido ? "fora do plano" : l.item_id ? esc(itens.get(l.item_id)?.nome ?? "item do plano") : "sem par na lista"}</span></span>
+      <span class="valor" style="color:var(--fg)">${R(l.valor)}</span></div>`).join("")}</div>
+    <div class="grade"><div><span class="rotulo">TOTAL DA NOTA</span><span class="mono" style="font-size:17px">${R(n.total)}</span></div><div><span class="rotulo">CONTOU NO PLANO</span><span class="mono" style="font-size:17px">${R(n.conta_no_plano)}</span></div></div>
+    ${daCompraAtual ? `<button class="botao" data-acao="abrirNota" data-id="${n.id}">Revisar vínculos</button>` : `<p class="pequeno">Nota de um plano anterior: só para consulta.</p>`}`);
+};
+acoes.apelidarMercado = (el) => {
+  const m = estado.mercados.mercados.find((x) => x.id === el.dataset.id);
+  abrirFolha(`<h2 class="h2">Apelido do mercado</h2>
+    <p class="pequeno">Na nota: ${esc(m.nome)}. O nome da nota continua aparecendo embaixo do apelido.</p>
+    <label class="campo"><span class="rotulo">APELIDO</span><input name="apelido" maxlength="40" autocomplete="off" value="${esc(m.apelido ?? "")}" placeholder="Ex.: Pedrão da esquina"></label>
+    <button class="botao" data-acao="salvarApelido" data-id="${esc(m.id)}">Salvar</button>
+    ${m.apelido ? `<button class="link-mono" data-acao="salvarApelido" data-id="${esc(m.id)}" data-limpar="1">TIRAR O APELIDO</button>` : ""}`);
+};
+acoes.salvarApelido = async (el) => {
+  const id = el.dataset.id;
+  const apelido = el.dataset.limpar ? "" : $("[name=apelido]", folha).value.trim();
+  try {
+    if (apelido) await q(sb.from("croc_mercados").upsert({ mercado: id, apelido, atualizado_por: estado.email, atualizado_em: new Date().toISOString() }, { onConflict: "casa_id,mercado" }));
+    else await q(sb.from("croc_mercados").delete().eq("mercado", id));
+    if (apelido) estado.mercados.apelidos[id] = apelido; else delete estado.mercados.apelidos[id];
+    for (const m of estado.mercados.mercados) m.apelido = estado.mercados.apelidos[m.id] ?? null;
+    fecharFolha(); desenhar(); avisar(apelido ? "Apelido salvo" : "Apelido removido");
+  } catch (e) { avisar(e.message, true); }
+};
 
 // ------------------------------------------------------------------ ESCANEAR NOTA
 function compraSugerida() {
@@ -884,6 +1004,7 @@ acoes.usarCompraNota = (el) => {
   guardarRascunho(); fecharFolha(); desenhar();
 };
 acoes.apagarNota = async () => {
+  estado.mercados = null;
   const r = estado.rascunho;
   if (!confirm("Apagar esta nota? O valor pago da compra é recalculado.")) return;
   try {
@@ -987,6 +1108,7 @@ async function aprender(c, linhas) {
   for (const { texto, destino } of linhasAp) estado.aprendidos[texto] = destino;
 }
 acoes.salvarNota = async (el) => {
+  estado.mercados = null;
   const r = estado.rascunho, c = compraPorId(r.compra_id);
   const desta = L.compararNota(c.itens, r.linhas);
   el.disabled = true;

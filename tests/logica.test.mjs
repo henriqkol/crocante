@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  quantidadeComprada, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -184,4 +184,42 @@ test("quantidade comprada na unidade do item", () => {
   // contado que veio a granel: mostra o peso, sem comparar
   assert.deepEqual(Q({ qtd: 1, unidade: "pct" }, [{ descricao: "PAO FRANCES KG", qtd: 0.42, un: "KG" }]), { q: null, un: "pct", texto: "420 g", confere: null });
   assert.equal(Q({ qtd: 1, unidade: "kg" }, []), null);
+});
+
+test("ranking de mercados", () => {
+  const itens = new Map([
+    ["a", { chave: "peito", nome: "Peito de frango", qtd: 1, unidade: "kg", preco: 20 }],
+    ["b", { chave: "batata", nome: "Batata inglesa", qtd: 1, unidade: "kg", preco: 5 }],
+    ["c", { chave: "ovos", nome: "Ovos", qtd: 2, unidade: "bandeja", preco: 12 }],
+  ]);
+  const P = "43261088118021000157650340001571811062554902", V = "43261006130671000153651230000066451551667839";
+  assert.equal(cnpjDaChave(P), "88118021000157");
+  assert.equal(cnpjTexto("88118021000157"), "88.118.021/0001-57");
+  const notas = [
+    { id: "1", chave: P, emitente: "SUPERMERCADO PEDRAO", emissao: "2026-10-10T18:28:02Z", total: 40, linhas: [
+      { descricao: "FILEZINHO 1KG", qtd: 1, un: "UN", valor: 24, item_id: "a" },
+      { descricao: "BATATA KG", qtd: 2, un: "KG", valor: 8, item_id: "b" },
+      { descricao: "OUTRA COISA", qtd: 1, un: "UN", valor: 8, removido: true }] },
+    { id: "2", chave: V, emitente: "COMERCIAL VENDRAMINI LTDA", emissao: "2026-10-10T18:47:27Z", total: 22, linhas: [
+      { descricao: "OVOS 20UN", qtd: 2, un: "UN", valor: 22, item_id: "c" }] },
+  ];
+  // sem produtos em comum: compara com o preço planejado
+  let r = rankingMercados(notas, itens, { "06130671000153": "Vendramini" });
+  assert.equal(r.modo, "plano");
+  assert.deepEqual(r.mercados.map((m) => m.apelido ?? m.nome), ["Vendramini", "SUPERMERCADO PEDRAO"]);
+  assert.ok(Math.abs(r.mercados[0].indice - 22 / 24) < 1e-9);
+  assert.ok(Math.abs(r.mercados[1].indice - 32 / 30) < 1e-9);
+  // com 3 produtos em comum, passa a comparar entre os mercados
+  notas.push({ id: "3", chave: V, emitente: "COMERCIAL VENDRAMINI LTDA", emissao: "2026-11-07T18:00:00Z", total: 30, linhas: [
+    { descricao: "PEITO KG", qtd: 1, un: "KG", valor: 18, item_id: "a" },
+    { descricao: "BATATA KG", qtd: 1, un: "KG", valor: 5, item_id: "b" }] });
+  notas.push({ id: "4", chave: P, emitente: "SUPERMERCADO PEDRAO", emissao: "2026-11-14T18:00:00Z", total: 26, linhas: [
+    { descricao: "OVOS 20UN", qtd: 2, un: "UN", valor: 26, item_id: "c" }] });
+  r = rankingMercados(notas, itens);
+  assert.equal(r.modo, "cesta");
+  assert.equal(r.mercados[0].nome, "COMERCIAL VENDRAMINI LTDA");
+  assert.equal(r.mercados[0].visitas, 2);
+  assert.equal(r.mercados[0].comuns.length, 3);
+  assert.ok(r.mercados[0].indice < 1 && r.mercados[1].indice > 1);
+  assert.equal(r.mercados[1].notas[0].id, "4"); // mais recente primeiro
 });

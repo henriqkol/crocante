@@ -24,7 +24,13 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 - Lista de compras mostra, por item ligado a nota, valor planejado com "pago" abaixo e quantidade planejada com "comprou" abaixo (`quantidadeComprada`: converte as linhas para a unidade do item; peso da embalagem vem da descrição, ex. "700G"; 5% de tolerância no peso). Só exibe, não altera `qtd` do item.
 - Casamento nota × lista (`casarNota`): primeiro o que a casa ensinou (`croc_aprendizado`: texto da nota sem números/unidades → chave do item, `nome:<NOME>` ou `fora`), depois as regras `busca`. Sem par: `sugerirItens` mostra os mais parecidos (abreviações, marcas no meio, trigramas). Toda escolha manual (`manual: true`) vira aprendizado ao salvar.
 
-## Regras do plano
+## Mercados (tela Grana)
+- Mercado = CNPJ tirado da chave da NFC-e (`cnpjDaChave`, dígitos 7–20); sem chave, `nome:<EMITENTE>` (`mercadoDaNota`). Apelido em `croc_mercados(casa_id, mercado, apelido)` (0005); o nome da nota continua aparecendo embaixo.
+- `rankingMercados(notas, itens, apelidos)` usa todas as notas da casa (todos os planos; `carregarMercados` busca os itens ligados que não estão no plano atual). Índice de preço ponderado pelo gasto, preço por kg/unidade via `quantidadeComprada`:
+  - "cesta" (quando 2+ mercados têm 3+ produtos em comum): preço do mercado ÷ média dos mercados naquele produto;
+  - "plano" (antes disso): valor pago ÷ quantidade comprada × preço planejado do item.
+- Rota `#mercado/<id>`: índice, gasto, "Em outros mercados" (mesmo produto, preço aqui × lá) e todas as notas; `verNota` mostra a nota só para consulta (revisar vínculos só se for do plano atual).
+
 - Pratos só mudam de dia dentro da mesma semana ("Mudar de dia" troca dois lugares do `croc_cardapio`), então as compras continuam cobertas.
 - Preparo de domingo calculado pelo cardápio real (`preparoDaSemana`): bases de cada prato vêm de `RECEITAS[id].pre` (`basesDoPrato`); cozidos: domingo fresco, até quarta geladeira, quinta–sábado congelador; bolinhas cruas até terça na geladeira; empanados sempre no congelador; sobrecoxa/linguiça vêm congeladas da compra. Descongelar = véspera do dia do prato. "Separe" e as levas continuam do plano original (os pratos da semana são os mesmos).
 - Medidor do congelador = saquinhos calculados + itens `congela` da semana + 1 (bacon do mês). Capacidade em `croc_config.congelador`.
