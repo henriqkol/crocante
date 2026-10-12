@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -222,4 +222,19 @@ test("ranking de mercados", () => {
   assert.equal(r.mercados[0].comuns.length, 3);
   assert.ok(r.mercados[0].indice < 1 && r.mercados[1].indice > 1);
   assert.equal(r.mercados[1].notas[0].id, "4"); // mais recente primeiro
+});
+
+test("pratos guardados na geladeira e no congelador", () => {
+  const g = { onde: "geladeira", guardado_em: "2026-10-11", porcoes: 3, comidas: 0, comeu: [] };
+  assert.deepEqual(situacaoGuardado(g, "2026-10-11"), { dias: 0, restam: 3, alerta: null, texto: "guardado hoje" });
+  assert.equal(situacaoGuardado(g, "2026-10-14").alerta, "logo");
+  assert.equal(situacaoGuardado(g, "2026-10-15").alerta, "passou");
+  assert.equal(situacaoGuardado({ ...g, onde: "congelador" }, "2026-10-15").alerta, null);
+  assert.equal(situacaoGuardado({ ...g, onde: "congelador" }, "2027-01-10").alerta, "passou");
+  const a = comerGuardado(g, 2, "2026-10-12", "rique");
+  assert.deepEqual(a, { comidas: 2, comeu: [{ data: "2026-10-12", porcoes: 2, por: "rique" }], comido_em: null });
+  const b = comerGuardado({ ...g, ...a }, 5, "2026-10-13");
+  assert.equal(b.comidas, 3); assert.equal(b.comido_em, "2026-10-13"); assert.equal(b.comeu[1].porcoes, 1);
+  const c = desfazerComida({ ...g, ...b });
+  assert.deepEqual(c, { comidas: 2, comeu: a.comeu, comido_em: null });
 });

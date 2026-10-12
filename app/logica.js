@@ -523,3 +523,36 @@ export function rankingMercados(notas, itens, apelidos = {}, minComuns = 3) {
   lista.sort((a, b) => (a[chave] ?? Infinity) - (b[chave] ?? Infinity) || b.total - a.total);
   return { modo, mercados: lista.map((m) => ({ ...m, indice: m[chave] })) };
 }
+
+// ------------------------------------------------------------------ geladeira (pratos prontos guardados)
+/** Prazos de prato pronto: geladeira 3–4 dias; congelador mantém a qualidade por uns 3 meses. */
+export const PRAZO_GUARDADO = { geladeira: { logo: 3, passou: 4 }, congelador: { logo: 60, passou: 90 } };
+/**
+ * Situação de um prato guardado em `hoje`.
+ * Retorna {dias, restam, alerta: null | "logo" | "passou", texto}.
+ */
+export function situacaoGuardado(g, hoje) {
+  const dias = Math.max(0, diasEntre(g.guardado_em, hoje));
+  const restam = Math.max(0, Number(g.porcoes ?? 1) - Number(g.comidas ?? 0));
+  const p = PRAZO_GUARDADO[g.onde] ?? PRAZO_GUARDADO.geladeira;
+  const alerta = dias >= p.passou ? "passou" : dias >= p.logo ? "logo" : null;
+  const ha = dias === 0 ? "hoje" : dias === 1 ? "ontem" : `há ${dias} dias`;
+  let texto;
+  if (g.onde === "geladeira") texto = alerta === "passou" ? `guardado ${ha}: passou dos 4 dias, confira antes de comer` : alerta === "logo" ? `guardado ${ha}: coma hoje` : `guardado ${ha}`;
+  else texto = alerta === "passou" ? `congelado ${ha}: mais de 3 meses, use logo` : alerta === "logo" ? `congelado ${ha}: use nas próximas semanas` : `congelado ${ha}`;
+  return { dias, restam, alerta, texto };
+}
+/** Registra porções comidas: soma em comidas e fecha (comido_em) quando acabam. */
+export function comerGuardado(g, porcoes, data, por = null) {
+  const n = Math.max(1, Math.round(Number(porcoes) || 1));
+  const comidas = Math.min(Number(g.porcoes), Number(g.comidas ?? 0) + n);
+  const comeu = [...(g.comeu ?? []), { data, porcoes: comidas - Number(g.comidas ?? 0), por }];
+  return { comidas, comeu, comido_em: comidas >= Number(g.porcoes) ? data : null };
+}
+/** Desfaz o último registro de "comemos". */
+export function desfazerComida(g) {
+  const comeu = [...(g.comeu ?? [])];
+  const ultimo = comeu.pop();
+  const comidas = Math.max(0, Number(g.comidas ?? 0) - Number(ultimo?.porcoes ?? 0));
+  return { comidas, comeu, comido_em: null };
+}

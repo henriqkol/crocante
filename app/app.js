@@ -118,7 +118,7 @@ async function carregarTudo() {
     ?? [...planos].filter((p) => p.inicio > h).sort((a, b) => a.inicio.localeCompare(b.inicio))[0]
     ?? planos[0] ?? null;
   estado.plano = atual;
-  estado.compras = []; estado.cardapio = []; estado.notas = []; estado.mercados = null;
+  estado.compras = []; estado.cardapio = []; estado.notas = []; estado.mercados = null; estado.guardados = null;
   if (!atual) return;
   const [compras, cardapio] = await Promise.all([
     q(sb.from("croc_compras").select("*, croc_itens!croc_itens_compra_id_fkey(*)").eq("plano_id", atual.id)),
@@ -191,7 +191,7 @@ function rotaAtual() {
   return { nome: partes[0], args: partes.slice(1) };
 }
 const TELAS_SEM_ABAS = new Set(["escanear", "nota", "comparar", "novo-plano", "prato", "casa", "avisos"]);
-const ABA_DA_TELA = { hoje: "hoje", semana: "semana", compras: "compras", ideias: "ideias", grana: "grana", mercado: "grana" };
+const ABA_DA_TELA = { hoje: "hoje", semana: "semana", compras: "compras", ideias: "geladeira", geladeira: "geladeira", grana: "grana", mercado: "grana" };
 let pararCamera = null;
 let vezDesenho = 0; // cada desenho tem um número: telas que esperam a rede não pintam por cima da tela seguinte
 async function desenhar() {
@@ -204,10 +204,10 @@ async function desenhar() {
   for (const a of abas.querySelectorAll("a")) {
     if (a.dataset.aba === ABA_DA_TELA[nome]) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
-  const telas = { hoje: telaHoje, semana: telaSemana, prato: telaPrato, compras: telaCompras, ideias: telaIdeias, grana: telaGrana, mercado: telaMercado,
+  const telas = { hoje: telaHoje, semana: telaSemana, prato: telaPrato, compras: telaCompras, ideias: telaIdeias, geladeira: telaIdeias, grana: telaGrana, mercado: telaMercado,
     escanear: telaEscanear, nota: telaNota, comparar: telaComparar, casa: telaCasa, avisos: telaAvisos, "novo-plano": telaNovoPlano };
   const tela = telas[nome] ?? telaHoje;
-  if (!estado.plano && !["novo-plano", "casa", "avisos", "ideias", "prato"].includes(nome)) return telaNovoPlano();
+  if (!estado.plano && !["novo-plano", "casa", "avisos", "ideias", "geladeira", "prato"].includes(nome)) return telaNovoPlano();
   try { await tela(...args); }
   catch (e) { app.innerHTML = `<div class="vazio"><strong>Algo deu errado</strong>${esc(e.message)}<button class="pilula" data-acao="recarregar">Tentar de novo</button></div>`; }
 }
@@ -313,7 +313,7 @@ async function telaHoje() {
       <a href="#compras/${prox ? indiceCompra(prox) : 1}"><span class="rotulo ${prox && prox.data <= L.addDias(h, 1) ? "alerta" : ""}">${proxTxt}</span><span class="numero">${prox ? R0(L.somaItens(prox.itens)) : "✓"}</span><span class="pequeno">${prox ? `${esc(nomeCompra(prox).toLowerCase())} · ${pl(prox.itens.length, "item", "itens")}` : "tudo comprado"}</span></a>
     </section>
     ${cartaoInstalar()}
-    <a class="contorno" href="#ideias" style="text-decoration:none"><span class="rotulo">NADA AGRADA HOJE?</span><span>Sorteie uma combinação ou veja os 30 pratos, cafés e doces ↗</span></a>
+    <a class="contorno" href="#geladeira" style="text-decoration:none"><span class="rotulo">NADA AGRADA HOJE?</span><span>Veja o que já está pronto no congelador, sorteie uma combinação ou veja os 30 pratos ↗</span></a>
   </div>`;
 }
 function planoParaLogica() {
@@ -383,7 +383,7 @@ async function telaPrato(id, dia, ref) {
   if (!P) return ir("#hoje");
   const feitos = estado.passos[id] ?? new Set();
   const nada = D.pre.length === 1 && D.pre[0].startsWith("Nada");
-  const voltar = dia ? "#semana" : "#ideias/pratos";
+  const voltar = dia ? "#semana" : "#geladeira/pratos";
   let guarda = "";
   if (dia && estado.plano) {
     const w = L.semanaDoDia(estado.plano.inicio, dia);
@@ -640,7 +640,7 @@ acoes.desfazerPago = async (el) => {
   catch (e) { avisar(e.message, true); }
 };
 
-// ------------------------------------------------------------------ IDEIAS (sorteio, pratos, café, doces, dicas)
+// ------------------------------------------------------------------ GELADEIRA (pratos prontos, sorteio, pratos, café, doces, dicas)
 async function telaIdeias(sub) {
   if (sub === "pratos") return telaPratos();
   if (sub === "cafe") return telaLista("CAFÉ E LANCHES", "Café e lanches", [["Café da manhã · até 10 min", CAFE], ["Lanche da tarde", LANCHE]]);
@@ -649,9 +649,14 @@ async function telaIdeias(sub) {
   if (!estado.sorteio) estado.sorteio = { pick: SORTEIO.map((s) => Math.floor(Math.random() * s[1].length)), lock: SORTEIO.map(() => false) };
   const { pick, lock } = estado.sorteio;
   const v = SORTEIO.map((s, i) => s[1][pick[i]]);
+  if (!estado.guardados) {
+    const vez = vezDesenho;
+    carregarGuardados().then(() => { if (vez === vezDesenho) desenhar(); }).catch((e) => avisar(e.message, true));
+  }
   app.innerHTML = `${topo()}<div class="conteudo">
-    <div class="cabeca"><div class="eyebrow">MONTE SEU PRATO</div>
-      <h1 class="h1">Nada agrada? <span class="destaque">Sorteia.</span></h1>
+    ${htmlGeladeira()}
+    <div class="cabeca" style="margin-top:12px"><div class="eyebrow">MONTE SEU PRATO</div>
+      <h2 class="h1">Nada agrada? <span class="destaque">Sorteia.</span></h2>
       <p class="lead">Trave o que gostou e troque só o resto.</p></div>
     <section class="lista">${SORTEIO.map((s, i) => `<div class="slot ${lock[i] ? "travado" : ""}">
       <span class="cresce" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span class="rotulo">${esc(s[0].toUpperCase())}</span><span class="h3">${esc(v[i])}</span></span>
@@ -661,12 +666,155 @@ async function telaIdeias(sub) {
     <section class="papel"><span class="rotulo">HOJE VAI SER</span><p style="font-size:21px;line-height:1.3;font-weight:500;letter-spacing:-.02em">${esc(L.fraseSorteio(v))}</p></section>
     <button class="botao" data-acao="sortear">Sortear de novo</button>
     <section class="lista">
-      <a class="linha" href="#ideias/pratos"><span class="cresce"><span class="h3">Os 30 pratos</span><span class="pequeno">Com receita, tempo e o que deixa crocante</span></span><span class="valor">↗</span></a>
-      <a class="linha" href="#ideias/cafe"><span class="cresce"><span class="h3">Café e lanches</span><span class="pequeno">Tudo em até 10 minutos</span></span><span class="valor">↗</span></a>
-      <a class="linha" href="#ideias/doces"><span class="cresce"><span class="h3">Doces</span><span class="pequeno">Sem fruta, com o que está na lista</span></span><span class="valor">↗</span></a>
-      <a class="linha" href="#ideias/dicas"><span class="cresce"><span class="h3">Dicas</span><span class="pequeno">Render o dinheiro, crocância e variedade</span></span><span class="valor">↗</span></a>
+      <a class="linha" href="#geladeira/pratos"><span class="cresce"><span class="h3">Os 30 pratos</span><span class="pequeno">Com receita, tempo e o que deixa crocante</span></span><span class="valor">↗</span></a>
+      <a class="linha" href="#geladeira/cafe"><span class="cresce"><span class="h3">Café e lanches</span><span class="pequeno">Tudo em até 10 minutos</span></span><span class="valor">↗</span></a>
+      <a class="linha" href="#geladeira/doces"><span class="cresce"><span class="h3">Doces</span><span class="pequeno">Sem fruta, com o que está na lista</span></span><span class="valor">↗</span></a>
+      <a class="linha" href="#geladeira/dicas"><span class="cresce"><span class="h3">Dicas</span><span class="pequeno">Render o dinheiro, crocância e variedade</span></span><span class="valor">↗</span></a>
     </section></div>`;
 }
+// ------------------------------------------------------------------ GELADEIRA (pratos prontos guardados)
+async function carregarGuardados() {
+  const desde = L.addDias(hoje(), -30);
+  estado.guardados = await q(sb.from("croc_geladeira").select("*").or(`comido_em.is.null,comido_em.gte.${desde}`).order("guardado_em").order("criado_em"));
+}
+const guardadoPorId = (id) => estado.guardados?.find((g) => g.id === id);
+const dataCurtaSemana = (d) => `${L.DIAS_CURTOS[L.diaSemana(d)].toLowerCase()} ${L.dataCurta(d)}`;
+function htmlGeladeira() {
+  const gs = estado.guardados;
+  const cab = `<div class="cabeca"><div class="eyebrow">GELADEIRA E CONGELADOR</div><h1 class="h1">O que já está <span class="destaque">pronto.</span></h1></div>`;
+  if (!gs) return `${cab}<p class="pequeno">Carregando…</p>`;
+  const h = hoje();
+  const tem = gs.filter((g) => !g.comido_em);
+  const linha = (g) => {
+    const st = L.situacaoGuardado(g, h);
+    const cor = st.alerta === "passou" ? "var(--signal-2)" : st.alerta === "logo" ? "var(--fg)" : "var(--fg-mute)";
+    return `<div class="linha">
+      <button class="cresce" data-acao="abrirGuardado" data-id="${g.id}" style="all:unset;flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;cursor:pointer">
+        <span style="font-size:15px">${esc(g.nome)}</span>
+        <span class="mono" style="font-size:11px;color:${cor}">${st.alerta ? "● " : ""}${esc(st.texto)} · ${dataCurtaSemana(g.guardado_em)}</span>
+        ${g.porcoes > 1 ? `<span class="pequeno">${st.restam} de ${pl(g.porcoes, "porção", "porções")}</span>` : ""}</button>
+      <button class="pilula" data-acao="comerGuardado" data-id="${g.id}">Comemos</button></div>`;
+  };
+  const grupo = (onde, titulo, vazio) => {
+    const its = tem.filter((g) => g.onde === onde);
+    const porcoes = its.reduce((n, g) => n + L.situacaoGuardado(g, h).restam, 0);
+    return `<section><div class="secao-titulo"><h2 class="h3">${titulo}</h2><span class="mono pequeno">${porcoes ? pl(porcoes, "porção", "porções") : ""}</span></div>
+      ${its.length ? `<div class="lista">${its.map(linha).join("")}</div>` : `<p class="pequeno">${vazio}</p>`}</section>`;
+  };
+  const comidos = gs.filter((g) => g.comido_em).sort((a, b) => b.comido_em.localeCompare(a.comido_em));
+  return `${cab}
+    ${grupo("congelador", "No congelador", "Nada congelado por enquanto. Guarde as levas do domingo aqui.")}
+    ${grupo("geladeira", "Na geladeira", "Nada pronto na geladeira.")}
+    <button class="botao" data-acao="novoGuardado">Guardar prato</button>
+    ${comidos.length ? `<details class="caixa"><summary class="rotulo" style="cursor:pointer">JÁ COMIDOS · ÚLTIMOS 30 DIAS · ${comidos.length}</summary>
+      <div class="lista">${comidos.map((g) => `<button class="linha" data-acao="abrirGuardado" data-id="${g.id}" style="opacity:.75"><span class="cresce"><span class="riscado">${esc(g.nome)}</span>
+        <span class="pequeno">${g.onde === "congelador" ? "congelado" : "guardado"} ${dataCurtaSemana(g.guardado_em)} · comido ${dataCurtaSemana(g.comido_em)}</span></span></button>`).join("")}</div></details>` : ""}`;
+}
+/** Opções de prato: os desta semana primeiro, depois todos; "Outro" libera o nome digitado. */
+function opcoesPrato(selecionado = null) {
+  const sem = L.semanaDoDia(estado.plano?.inicio ?? hoje(), hoje());
+  const daSemana = [...new Set(estado.cardapio.filter((r) => estado.plano && L.semanaDoDia(estado.plano.inicio, r.data) === sem).map((r) => r.prato))]
+    .map((id) => PRATOS[id]).filter(Boolean);
+  const todos = PRATOS.filter(Boolean).slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const op = (p) => `<option value="${p.id}" ${Number(selecionado) === p.id ? "selected" : ""}>${esc(p.nome)}</option>`;
+  return `${daSemana.length ? `<optgroup label="Desta semana">${daSemana.map(op).join("")}</optgroup>` : ""}
+    <optgroup label="Todos os pratos">${todos.map(op).join("")}</optgroup>
+    <option value="outro" ${selecionado === "outro" ? "selected" : ""}>Outro (digitar o nome)</option>`;
+}
+acoes.novoGuardado = () => {
+  abrirFolha(`<h2 class="h2">Guardar prato</h2>
+    <label class="campo"><span class="rotulo">PRATO</span><select name="prato" data-muda="pratoGuardado"><option value="">Escolha…</option>${opcoesPrato()}</select></label>
+    <label class="campo" id="campoNomeGuardado" hidden><span class="rotulo">NOME DO PRATO</span><input name="nome" maxlength="60" autocomplete="off" placeholder="Ex.: Escondidinho da sogra"></label>
+    <div class="pilulas" role="group" aria-label="Onde">
+      <button class="pilula" data-acao="ondeGuardado" data-onde="congelador" aria-pressed="true">Congelador</button>
+      <button class="pilula" data-acao="ondeGuardado" data-onde="geladeira" aria-pressed="false">Geladeira</button></div>
+    <div class="campos-2">
+      <label class="campo"><span class="rotulo">PORÇÕES</span><input name="porcoes" inputmode="numeric" value="2"></label>
+      <label class="campo"><span class="rotulo">GUARDADO EM</span><input name="data" type="date" value="${hoje()}" max="${hoje()}"></label></div>
+    <button class="botao" data-acao="salvarGuardado">Guardar</button>`);
+};
+mudancas.pratoGuardado = (el) => { $("#campoNomeGuardado", folha).hidden = el.value !== "outro"; if (el.value === "outro") $("[name=nome]", folha).focus(); };
+acoes.ondeGuardado = (el) => { for (const b of el.parentElement.children) b.setAttribute("aria-pressed", String(b === el)); };
+acoes.salvarGuardado = async (el) => {
+  const f = folha;
+  const prato = $("[name=prato]", f).value;
+  const nome = prato === "outro" ? $("[name=nome]", f).value.trim() : PRATOS[Number(prato)]?.nome;
+  if (!nome) return avisar(prato === "outro" ? "Digite o nome do prato." : "Escolha o prato.", true);
+  const porcoes = Math.max(1, Math.round(numero($("[name=porcoes]", f).value) || 1));
+  const onde = $("[data-acao=ondeGuardado][aria-pressed=true]", f)?.dataset.onde ?? "congelador";
+  const guardado_em = $("[name=data]", f).value || hoje();
+  try {
+    const novo = await q(sb.from("croc_geladeira").insert({ prato_id: prato === "outro" ? null : Number(prato), nome, onde, porcoes, guardado_em, criado_por: estado.email }).select().single());
+    (estado.guardados ??= []).push(novo);
+    estado.guardados.sort((a, b) => a.guardado_em.localeCompare(b.guardado_em));
+    fecharFolha(); desenhar(); avisar(`${nome} ${onde === "congelador" ? "no congelador" : "na geladeira"}`);
+  } catch (e) { avisar(e.message, true); }
+};
+acoes.comerGuardado = (el) => {
+  const g = guardadoPorId(el.dataset.id);
+  const st = L.situacaoGuardado(g, hoje());
+  abrirFolha(`<h2 class="h2">Comemos ${esc(g.nome.toLowerCase())}</h2>
+    <div class="campos-2">
+      <label class="campo"><span class="rotulo">QUANDO</span><input name="data" type="date" value="${hoje()}" min="${g.guardado_em}" max="${hoje()}"></label>
+      <label class="campo"><span class="rotulo">PORÇÕES</span><input name="porcoes" inputmode="numeric" value="${st.restam}" ${st.restam <= 1 ? "readonly" : ""}></label></div>
+    <p class="pequeno">${st.restam > 1 ? `Restam ${st.restam}. Se comerem só uma parte, o resto continua na lista.` : "Era a última porção: sai da lista e vai para \"Já comidos\"."}</p>
+    <button class="botao" data-acao="confirmarComida" data-id="${g.id}">Marcar como comido</button>`);
+};
+async function salvarGuardado(g, campos, msg) {
+  await q(sb.from("croc_geladeira").update(campos).eq("id", g.id));
+  Object.assign(g, campos);
+  fecharFolha(); desenhar(); if (msg) avisar(msg);
+}
+acoes.confirmarComida = async (el) => {
+  const g = guardadoPorId(el.dataset.id);
+  const data = $("[name=data]", folha).value || hoje();
+  try { await salvarGuardado(g, L.comerGuardado(g, numero($("[name=porcoes]", folha).value), data, estado.email), "Marcado como comido"); }
+  catch (e) { avisar(e.message, true); }
+};
+acoes.abrirGuardado = (el) => {
+  const g = guardadoPorId(el.dataset.id);
+  const st = L.situacaoGuardado(g, hoje());
+  const outro = g.onde === "congelador" ? "geladeira" : "congelador";
+  abrirFolha(`<h2 class="h2">${esc(g.nome)}</h2>
+    <p class="pequeno">${g.comido_em ? `Acabou ${dataCurtaSemana(g.comido_em)}.` : `${esc(st.texto[0].toUpperCase() + st.texto.slice(1))}. ${g.porcoes > 1 ? `Restam ${st.restam} de ${g.porcoes} porções.` : ""}`}</p>
+    ${(g.comeu ?? []).length ? `<div class="lista">${g.comeu.map((c) => `<div class="linha"><span class="cresce"><span>Comemos ${pl(c.porcoes, "porção", "porções")}</span><span class="pequeno">${dataCurtaSemana(c.data)}${c.por ? ` · ${esc(c.por.split("@")[0])}` : ""}</span></span></div>`).join("")}</div>` : ""}
+    <div class="campos-2">
+      <label class="campo"><span class="rotulo">PORÇÕES</span><input name="porcoes" inputmode="numeric" value="${g.porcoes}"></label>
+      <label class="campo"><span class="rotulo">GUARDADO EM</span><input name="data" type="date" value="${g.guardado_em}" max="${hoje()}"></label></div>
+    <button class="botao" data-acao="editarGuardado" data-id="${g.id}">Salvar</button>
+    ${g.comido_em ? "" : `<button class="pilula" data-acao="moverGuardado" data-id="${g.id}">${outro === "geladeira" ? "Passou para a geladeira (descongelando)" : "Passou para o congelador"}</button>`}
+    ${(g.comeu ?? []).length ? `<button class="pilula" data-acao="desfazerComida" data-id="${g.id}">Desfazer o último "comemos"</button>` : ""}
+    <button class="link-mono" data-acao="apagarGuardado" data-id="${g.id}">APAGAR</button>`);
+};
+acoes.editarGuardado = async (el) => {
+  const g = guardadoPorId(el.dataset.id);
+  const porcoes = Math.max(1, Math.round(numero($("[name=porcoes]", folha).value) || 1), Number(g.comidas ?? 0));
+  const guardado_em = $("[name=data]", folha).value || g.guardado_em;
+  const campos = { porcoes, guardado_em };
+  if (!g.comido_em && porcoes <= Number(g.comidas ?? 0)) campos.comido_em = g.comeu?.at(-1)?.data ?? hoje();
+  if (g.comido_em && porcoes > Number(g.comidas ?? 0)) campos.comido_em = null;
+  try { await salvarGuardado(g, campos, "Salvo"); } catch (e) { avisar(e.message, true); }
+};
+acoes.moverGuardado = async (el) => {
+  const g = guardadoPorId(el.dataset.id);
+  const onde = g.onde === "congelador" ? "geladeira" : "congelador";
+  // ao descongelar, o prazo da geladeira conta a partir de hoje
+  try { await salvarGuardado(g, { onde, guardado_em: hoje() }, onde === "geladeira" ? "Na geladeira desde hoje" : "No congelador desde hoje"); }
+  catch (e) { avisar(e.message, true); }
+};
+acoes.desfazerComida = async (el) => {
+  const g = guardadoPorId(el.dataset.id);
+  try { await salvarGuardado(g, L.desfazerComida(g), "Desfeito"); } catch (e) { avisar(e.message, true); }
+};
+acoes.apagarGuardado = async (el) => {
+  if (!confirm("Apagar este prato da lista?")) return;
+  try {
+    await q(sb.from("croc_geladeira").delete().eq("id", el.dataset.id));
+    estado.guardados = estado.guardados.filter((g) => g.id !== el.dataset.id);
+    fecharFolha(); desenhar(); avisar("Apagado");
+  } catch (e) { avisar(e.message, true); }
+};
+
 const rolar = (i) => { const n = SORTEIO[i][1].length; let r; do { r = Math.floor(Math.random() * n); } while (n > 1 && r === estado.sorteio.pick[i]); estado.sorteio.pick[i] = r; };
 acoes.rolar = (el) => { rolar(Number(el.dataset.i)); desenhar(); };
 acoes.travar = (el) => { const i = Number(el.dataset.i); estado.sorteio.lock[i] = !estado.sorteio.lock[i]; desenhar(); };
@@ -676,7 +824,7 @@ function telaPratos() {
   const f = estado.filtroPratos;
   const filtros = [["todos", "Todos"], ["t:r", "Rápidos"], ["t:f", "Forno faz sozinho"], ["t:s", "Fim de semana"], ...Object.entries(CAT)];
   const lista = PRATOS.filter((p) => p && (f === "todos" || (f.startsWith("t:") ? p.tipo === f.slice(2) : p.cat === f)));
-  app.innerHTML = `${topo({ voltar: "#ideias", titulo: "OS 30 PRATOS" })}<div class="conteudo">
+  app.innerHTML = `${topo({ voltar: "#geladeira", titulo: "OS 30 PRATOS" })}<div class="conteudo">
     <p class="lead">Feitos só com o que está na lista. O tempo considera as bases do domingo prontas.</p>
     <div class="pilulas rolagem">${filtros.map(([k, n]) => `<button class="pilula" aria-pressed="${k === f}" data-acao="filtrarPratos" data-f="${k}">${esc(n)}</button>`).join("")}</div>
     <section class="lista">${lista.map((p) => `<a class="linha" href="#prato/${p.id}" style="align-items:flex-start">
@@ -685,13 +833,13 @@ function telaPratos() {
 }
 acoes.filtrarPratos = (el) => { estado.filtroPratos = el.dataset.f; desenhar(); };
 function telaLista(rotulo, titulo, secoes) {
-  app.innerHTML = `${topo({ voltar: "#ideias", titulo: rotulo })}<div class="conteudo">
+  app.innerHTML = `${topo({ voltar: "#geladeira", titulo: rotulo })}<div class="conteudo">
     <h1 class="h1">${esc(titulo)}</h1>
     ${secoes.map(([t, itens]) => `<section><div class="secao-titulo"><h2 class="h3">${esc(t)}</h2></div>
       <div class="lista">${itens.map((x) => `<div class="linha"><span class="ponto"></span><span class="cresce"><span style="font-size:15px">${esc(x)}</span></span></div>`).join("")}</div></section>`).join("")}</div>`;
 }
 function telaDoces() {
-  app.innerHTML = `${topo({ voltar: "#ideias", titulo: "DOCES" })}<div class="conteudo">
+  app.innerHTML = `${topo({ voltar: "#geladeira", titulo: "DOCES" })}<div class="conteudo">
     <h1 class="h1">Doces sem fruta</h1><p class="lead">Só o suco no mousse. Nenhum leva mais de 10 minutos de trabalho.</p>
     ${DOCES.map((d) => `<section class="caixa"><div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><h2 class="h3">${esc(d.nome)}</h2><span class="etiqueta">${esc(d.tempo.toUpperCase())}</span></div>
       <p class="pequeno">${esc(d.ing)}</p><p style="font-size:15px">${esc(d.modo)}</p><p class="pequeno" style="color:var(--signal-2)">${esc(d.dica)}</p></section>`).join("")}</div>`;

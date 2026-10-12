@@ -8,7 +8,7 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
   - `dados.js` — conteúdo do plano (30 pratos e receitas, cardápio das 4 semanas, preparo de domingo, sorteio, café, doces, dicas). Gerado do plano original; editar à mão.
   - `compras.js` — `SECOES` (seções do mercado, na ordem da volta no supermercado; a lista de compras agrupa por elas, `croc_itens.secao` sobrescreve) e o modelo das compras para 2 pessoas: `MES` (compra do mês: despensa, higiene e limpeza) e `SEMANA` (compra de cada sábado, `q` = quantidade em cada semana). `busca` = regex para reconhecer o produto na nota (texto normalizado: maiúsculas, sem acento).
   - `logica.js` — lógica pura (datas, gerar plano, escala por pessoas, congelador, orçamento, casar nota × lista, lembretes). Usada pelo app, pela função e pelos testes.
-  - `app.js` — telas e ações (rotas por hash: hoje, semana, prato, compras, ideias, grana, escanear, nota, comparar, casa, avisos, novo-plano).
+  - `app.js` — telas e ações (rotas por hash: hoje, semana, prato, compras, geladeira (antiga ideias, ainda aceita), grana, mercado, escanear, nota, comparar, casa, avisos, novo-plano).
 - **Banco**: no projeto Supabase do Finanças (`hisraarbwhuhovommgqo`, plano grátis só permite 2 projetos). Tabelas `croc_*` em `public` (migrações em `supabase/migrations/`, aplicar com `apply_migration`). Reaproveita do Finanças: login só Google (0015 de lá), `casas`, `membros` (convite = inserir e-mail), `usuarios`, `casa_atual()`, `entrar()`, `trocar_casa()`, `minhas_casas()`. RLS em tudo: `casa_id = casa_atual()`. A casa aberta é a mesma nos dois apps. Casa 1 = Rique e Laynara.
   - Plano = 4 semanas a partir de um domingo (`croc_planos`), 5 compras (`croc_compras`: mês + semanas 1–4, sempre no sábado antes do domingo do preparo), itens (`croc_itens`, `marcado` ao vivo via Realtime), cardápio (`croc_cardapio`, trocável), notas (`croc_notas.linhas` jsonb com `item_id` e `removido`), avisos (`croc_push` por aparelho, `croc_avisos` evita repetição).
   - `croc_compras.pago` = soma de `conta_no_plano` das notas da compra (ou valor digitado sem nota).
@@ -31,6 +31,12 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
   - "plano" (antes disso): valor pago ÷ quantidade comprada × preço planejado do item.
 - Rota `#mercado/<id>`: índice, gasto, "Em outros mercados" (mesmo produto, preço aqui × lá) e todas as notas; `verNota` mostra a nota só para consulta (revisar vínculos só se for do plano atual).
 
+## Geladeira (aba que era Ideias)
+- Pratos prontos guardados em `croc_geladeira` (0006): `prato_id` (prato do app) ou só `nome` (digitado), `onde` geladeira|congelador, `porcoes`, `comidas`, `guardado_em`, `comido_em` (quando acabou), `comeu` [{data, porcoes, por}].
+- `situacaoGuardado` (prazos em `PRAZO_GUARDADO`: geladeira coma hoje com 3 dias, passou com 4; congelador use logo com 60, passou com 90), `comerGuardado`, `desfazerComida`. Passar do congelador para a geladeira reinicia `guardado_em` (o prazo da geladeira conta do descongelamento).
+- A tela mostra congelador, geladeira, "Já comidos" dos últimos 30 dias e, abaixo, o sorteio e os links (30 pratos, café, doces, dicas).
+
+## Regras do plano
 - Pratos só mudam de dia dentro da mesma semana ("Mudar de dia" troca dois lugares do `croc_cardapio`), então as compras continuam cobertas.
 - Preparo de domingo calculado pelo cardápio real (`preparoDaSemana`): bases de cada prato vêm de `RECEITAS[id].pre` (`basesDoPrato`); cozidos: domingo fresco, até quarta geladeira, quinta–sábado congelador; bolinhas cruas até terça na geladeira; empanados sempre no congelador; sobrecoxa/linguiça vêm congeladas da compra. Descongelar = véspera do dia do prato. "Separe" e as levas continuam do plano original (os pratos da semana são os mesmos).
 - Medidor do congelador = saquinhos calculados + itens `congela` da semana + 1 (bacon do mês). Capacidade em `croc_config.congelador`.
