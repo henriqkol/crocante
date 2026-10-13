@@ -25,6 +25,12 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 - Lista de compras mostra, por item ligado a nota, valor planejado com "pago" abaixo e quantidade planejada com "comprou" abaixo (`quantidadeComprada`: converte as linhas para a unidade do item; peso da embalagem vem da descrição, ex. "700G"; 5% de tolerância no peso). Só exibe, não altera `qtd` do item.
 - Casamento nota × lista (`casarNota`): primeiro o que a casa ensinou (`croc_aprendizado`: texto da nota sem números/unidades → chave do item, `nome:<NOME>` ou `fora`), depois as regras `busca`. Sem par: `sugerirItens` mostra os mais parecidos (abreviações, marcas no meio, trigramas). Toda escolha manual (`manual: true`) vira aprendizado ao salvar.
 
+## Integração com o Finanças da Casa (mesmo banco e login)
+- Ao salvar uma nota (nova ou revisão), `sincronizarFinancas` → `enviarAoFinancas`: se a chave ainda não está em `notas` do Finanças, chama `/functions/v1/api/nfce` do Finanças com o QR completo (`croc_notas.qr`, 0007; só a chave não basta para a SEFAZ-RS) e guarda `croc_notas.financas_id`.
+- Linhas ligadas a itens do plano: `nota_itens.categoria_id` pela seção do mercado (`CATEGORIA_DA_SECAO`, por nome da categoria), `categoria_origem = "crocante"`, mais uma regra exata em `regras_categoria` (prioridade 1, origem "crocante", `ignoreDuplicates`: nunca sobrescreve regra existente) para a recategorização do Finanças não desfazer. Não mexe em itens com origem manual/aprendida. Linhas fora do plano ficam como o Finanças classificou (a casa classifica lá).
+- Gasto ligado à nota (`nota_transacao`): categoria = a que mais pesa nos itens (`categoriaDominante`, origem "nota"), salvo `manual`.
+- Pareamento linha × item do Finanças: `parearItensFinancas` (posição com descrição e valor; depois descrição e valor). Na lista "Notas desta compra": "Finanças ✓" por nota, botão para enviar as que faltam e aviso de itens fora do plano com link para o app do Finanças.
+
 ## Mercados (tela Grana)
 - Mercado = CNPJ tirado da chave da NFC-e (`cnpjDaChave`, dígitos 7–20); sem chave, `nome:<EMITENTE>` (`mercadoDaNota`). Apelido em `croc_mercados(casa_id, mercado, apelido)` (0005); o nome da nota continua aparecendo embaixo.
 - `rankingMercados(notas, itens, apelidos)` usa todas as notas da casa (todos os planos; `carregarMercados` busca os itens ligados que não estão no plano atual). Índice de preço ponderado pelo gasto, preço por kg/unidade via `quantidadeComprada`:

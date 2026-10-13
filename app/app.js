@@ -132,7 +132,7 @@ async function carregarTudo() {
   estado.compras.forEach((c) => delete c.croc_itens);
   estado.cardapio = cardapio;
   const ids = estado.compras.map((c) => c.id);
-  estado.notas = ids.length ? await q(sb.from("croc_notas").select("id, compra_id, conta_no_plano, total, emitente, emissao, criado_em, criado_por, linhas").in("compra_id", ids).order("criado_em")) : [];
+  estado.notas = ids.length ? await q(sb.from("croc_notas").select("id, compra_id, chave, qr, financas_id, conta_no_plano, total, emitente, emissao, criado_em, criado_por, linhas").in("compra_id", ids).order("criado_em")) : [];
   const ap = await q(sb.from("croc_aprendizado").select("texto, destino"));
   estado.aprendidos = Object.fromEntries(ap.map((a) => [a.texto, a.destino]));
   estado.compras.forEach((c) => { c.notas = estado.notas.filter((n) => n.compra_id === c.id).length; });
@@ -517,8 +517,12 @@ async function telaCompras(n) {
       ${c.pago == null ? `<button class="pilula" data-acao="pagarSemNota" data-compra="${c.id}">Já paguei, sem nota</button>` : `<button class="pilula" data-acao="desfazerPago" data-compra="${c.id}">Reabrir compra</button>`}</div>
     ${notasDaCompra(c.id).length ? `<section><div class="secao-titulo"><h2 class="h3">Notas desta compra</h2><span class="mono pequeno">${R(c.pago ?? 0)}</span></div>
       <div class="lista">${notasDaCompra(c.id).map((n) => { const fora = (n.linhas ?? []).filter((l) => l.removido).length, sem = (n.linhas ?? []).filter((l) => !l.removido && !l.item_id).length; return `<button class="linha" data-acao="abrirNota" data-id="${n.id}">
-        <span class="cresce"><span>${esc(n.emitente ?? "Nota fiscal")}</span><span class="pequeno">${n.emissao ? L.dataCurta(n.emissao.slice(0, 10)) + " · " : ""}${pl((n.linhas ?? []).length, "item", "itens")}${fora ? ` · ${fora} fora do plano` : ""}${sem ? ` · <span style="color:var(--signal-2)">${sem} sem par</span>` : ""}</span></span>
-        <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="valor" style="color:var(--fg)">${R(n.conta_no_plano)}</span><span class="rotulo">REVISAR ↗</span></span></button>`; }).join("")}</div></section>` : ""}
+        <span class="cresce"><span>${esc(n.emitente ?? "Nota fiscal")}</span><span class="pequeno">${n.emissao ? L.dataCurta(n.emissao.slice(0, 10)) + " · " : ""}${pl((n.linhas ?? []).length, "item", "itens")}${fora ? ` · ${fora} fora do plano` : ""}${sem ? ` · <span style="color:var(--signal-2)">${sem} sem par</span>` : ""}${n.financas_id ? " · Finanças ✓" : ""}</span></span>
+        <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="valor" style="color:var(--fg)">${R(n.conta_no_plano)}</span><span class="rotulo">REVISAR ↗</span></span></button>`; }).join("")}</div>
+      ${(() => { const notas = notasDaCompra(c.id), sem = notas.filter((n) => !n.financas_id && (n.chave || n.qr));
+        const fora = notas.filter((n) => n.financas_id).reduce((t, n) => t + (n.linhas ?? []).filter((l) => l.removido).length, 0);
+        return `${sem.length ? `<button class="link-mono" style="margin-top:10px" data-acao="enviarFinancas" data-compra="${c.id}">ENVIAR ${sem.length === 1 ? "A NOTA" : `AS ${sem.length} NOTAS`} AO FINANÇAS</button>` : ""}
+          ${fora ? `<p class="pequeno" style="margin-top:10px">${pl(fora, "item fora do plano", "itens fora do plano")} para classificar no Finanças. <a class="link-mono" href="${FINANCAS_APP}" target="_blank" rel="noopener">ABRIR ↗</a></p>` : ""}`; })()}</section>` : ""}
     <p class="pequeno"><span class="asterisco" style="font-size:15px">*</span> coringa, não pode faltar. O que um morador marca aparece na hora para o outro.</p>
   </div>
   <div class="rodape-fixo"><a class="botao" href="#escanear/${c.id}">${notasDaCompra(c.id).length ? "Adicionar outra nota" : "Escanear a nota desta compra"}</a></div>`;
@@ -1068,7 +1072,7 @@ async function processarNota(texto, compraId) {
     }
     const c = compraPorId(compraId);
     const linhas = L.casarNota(c.itens, nota.itens.map((i) => ({ descricao: i.descricao, valor: i.valor_total, qtd: i.quantidade, un: i.unidade })), estado.aprendidos);
-    estado.rascunho = { nota_id: null, compra_id: c.id, chave: nota.chave, emitente: nota.nome_emitente, emissao: nota.emissao, total: nota.valor_pago ?? nota.valor_total, linhas, passados: [] };
+    estado.rascunho = { nota_id: null, compra_id: c.id, qr: texto, chave: nota.chave, emitente: nota.nome_emitente, emissao: nota.emissao, total: nota.valor_pago ?? nota.valor_total, linhas, passados: [] };
     guardarRascunho();
     ir("#nota");
   } catch (e) {
@@ -1305,7 +1309,7 @@ acoes.salvarNota = async (el) => {
   try {
     const linhas = r.linhas.map(({ descricao, valor, qtd, un, item_id, chave, removido, manual, origem }) => ({ descricao, valor, qtd, un, item_id: item_id ?? null, chave: chave ?? null, removido: !!removido, manual: !!manual, origem: origem ?? null }));
     const campos = { compra_id: c.id, linhas, conta_no_plano: desta.contaNoPlano };
-    const sel = "id, compra_id, conta_no_plano, total, emitente, criado_em, criado_por, linhas";
+    const sel = "id, compra_id, chave, qr, financas_id, conta_no_plano, total, emitente, emissao, criado_em, criado_por, linhas";
     let nota;
     if (r.nota_id) {
       nota = await q(sb.from("croc_notas").update(campos).eq("id", r.nota_id).select(sel).single());
@@ -1313,7 +1317,7 @@ acoes.salvarNota = async (el) => {
       estado.notas = estado.notas.filter((n) => n.id !== r.nota_id);
       if (antiga && antiga.compra_id !== c.id) await recalcularPago(antiga.compra_id);
     } else {
-      nota = await q(sb.from("croc_notas").insert({ ...campos, chave: r.chave, emitente: r.emitente, emissao: r.emissao, total: r.total, criado_por: estado.email }).select(sel).single());
+      nota = await q(sb.from("croc_notas").insert({ ...campos, chave: r.chave, qr: r.qr ?? null, emitente: r.emitente, emissao: r.emissao, total: r.total, criado_por: estado.email }).select(sel).single());
     }
     estado.notas.push(nota);
     await recalcularPago(c.id);
@@ -1324,9 +1328,84 @@ acoes.salvarNota = async (el) => {
     const novo = !r.nota_id;
     estado.rascunho = null; guardarRascunho();
     if (novo) fn("/avisar", { tipo: "compra", compra_id: c.id }).catch(() => {});
-    avisar(novo ? `Nota salva na ${nomeCompra(c).toLowerCase()}` : "Revisão salva");
+    avisar(novo ? `Nota salva na ${nomeCompra(c).toLowerCase()}. Enviando ao Finanças…` : "Revisão salva. Atualizando o Finanças…");
     ir(`#compras/${indiceCompra(c)}`);
+    sincronizarFinancas(nota);
   } catch (e) { el.disabled = false; avisar(e.message, true); }
+};
+
+// ------------------------------------------------------------------ CROCANTE → FINANÇAS DA CASA
+// A nota salva aqui entra no Finanças pelo próprio caminho de leitura dele (/api/nfce: SEFAZ, regras, IA, vínculo com o
+// gasto do cartão). Linhas ligadas a itens do plano recebem a categoria da seção do mercado (CATEGORIA_DA_SECAO), sem
+// mexer no que a casa escolheu lá (manual/aprendida), e vira regra exata lá (origem "crocante") para a recategorização
+// do Finanças não desfazer. Linhas fora do plano ficam com a classificação do Finanças.
+const FINANCAS_API = `${SUPABASE_URL}/functions/v1/api`;
+const FINANCAS_APP = "https://henriqkol.github.io/financas-casa/#notas";
+async function fnFinancas(rota, corpo) {
+  const { data: { session } } = await sb.auth.getSession();
+  const r = await fetch(FINANCAS_API + rota, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${session?.access_token ?? ""}` },
+    body: JSON.stringify(corpo),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || j.error || `O Finanças respondeu ${r.status}`);
+  return j;
+}
+/** Item do plano por id, inclusive os que já foram movidos para outra lista. */
+function itemDoPlano(id) {
+  for (const c of estado.compras) { const i = c.itens.find((x) => x.id === id) ?? c.movidos?.find((x) => x.id === id); if (i) return i; }
+  return null;
+}
+async function enviarAoFinancas(nota) {
+  if (!nota.chave && !nota.qr) throw new Error("Nota sem chave de acesso");
+  let finId = nota.financas_id;
+  if (!finId) {
+    const ja = nota.chave ? await q(sb.from("notas").select("id").eq("chave", nota.chave).maybeSingle()) : null;
+    if (!ja && !/^https?:|[?&]p=/i.test(nota.qr ?? "")) throw new Error("esta nota foi lida antes da integração e o Finanças precisa do QR completo. Escaneie o QR dela uma vez no Finanças e toque em enviar de novo");
+    finId = ja?.id ?? (await fnFinancas("/nfce", { texto: nota.qr })).nota?.id;
+    if (!finId) throw new Error("O Finanças não devolveu a nota");
+    await q(sb.from("croc_notas").update({ financas_id: finId }).eq("id", nota.id));
+    nota.financas_id = finId;
+  }
+  const [itensFin, cats, links] = await Promise.all([
+    q(sb.from("nota_itens").select("id, ordem, descricao, descricao_norm, valor_total, categoria_id, categoria_origem").eq("nota_id", finId)),
+    q(sb.from("categorias").select("id, nome")),
+    q(sb.from("nota_transacao").select("transacao_id").eq("nota_id", finId)),
+  ]);
+  const pares = L.parearItensFinancas(nota.linhas ?? [], itensFin);
+  const secaoDaLinha = (l) => { const it = itemDoPlano(l.item_id); return it ? secaoDoItem(it) : null; };
+  const mudar = L.categoriasParaFinancas(pares, secaoDaLinha, Object.fromEntries(cats.map((x) => [x.nome, x.id])));
+  const porCat = new Map();
+  for (const m of mudar) porCat.set(m.categoria_id, [...(porCat.get(m.categoria_id) ?? []), m.id]);
+  for (const [cat, ids] of porCat) await q(sb.from("nota_itens").update({ categoria_id: cat, categoria_origem: "crocante" }).in("id", ids));
+  // regra exata no Finanças (como as que ele aprende): a recategorização dele respeita, e a próxima nota já vem certa.
+  // ignoreDuplicates: nunca sobrescreve uma regra que já existe (sua, aprendida, ou do próprio Crocante)
+  const regras = mudar.map((m) => { const it = itensFin.find((x) => x.id === m.id); return it?.descricao_norm ? { alvo: "item", tipo: "exato", padrao: it.descricao_norm, categoria_id: m.categoria_id, prioridade: 1, origem: "crocante" } : null; })
+    .filter(Boolean).filter((r, k, a) => a.findIndex((x) => x.padrao === r.padrao) === k);
+  if (regras.length) await q(sb.from("regras_categoria").upsert(regras, { onConflict: "casa_id,alvo,tipo,padrao", ignoreDuplicates: true }));
+  // o gasto do cartão ligado à nota segue a categoria que mais pesa nos itens (como o Finanças faz), salvo escolha manual
+  if (mudar.length) for (const { transacao_id } of links) {
+    const tx = await q(sb.from("transacoes").select("categoria_origem").eq("id", transacao_id).single());
+    if (tx.categoria_origem === "manual") continue;
+    const notasDoGasto = (await q(sb.from("nota_transacao").select("nota_id").eq("transacao_id", transacao_id))).map((x) => x.nota_id);
+    const its = await q(sb.from("nota_itens").select("categoria_id, valor_total").in("nota_id", notasDoGasto));
+    const dom = L.categoriaDominante(its);
+    if (dom) await q(sb.from("transacoes").update({ categoria_id: dom, categoria_origem: "nota" }).eq("id", transacao_id));
+  }
+  return { fora: (nota.linhas ?? []).filter((l) => l.removido).length, categorias: mudar.length, vinculada: links.length > 0 };
+}
+async function sincronizarFinancas(nota) {
+  try {
+    const r = await enviarAoFinancas(nota);
+    avisar(r.fora ? `Nota no Finanças. ${pl(r.fora, "item fora do plano", "itens fora do plano")} para classificar lá.` : "Nota no Finanças, já classificada.");
+  } catch (e) { avisar(`Não foi para o Finanças: ${e.message}.`, true); }
+  if (rotaAtual().nome === "compras" && folha.hidden) desenhar();
+}
+acoes.enviarFinancas = async (el) => {
+  const notas = notasDaCompra(el.dataset.compra).filter((n) => !n.financas_id && (n.chave || n.qr));
+  el.disabled = true; el.textContent = "ENVIANDO…";
+  for (const n of notas) await sincronizarFinancas(n);
 };
 
 // ------------------------------------------------------------------ NOVO PLANO

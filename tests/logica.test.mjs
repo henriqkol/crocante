@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  refeicoesDoMomento, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  parearItensFinancas, categoriasParaFinancas, categoriaDominante, refeicoesDoMomento, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -245,4 +245,31 @@ test("refeição em destaque na tela Hoje", () => {
   assert.deepEqual(refeicoesDoMomento("2026-10-14", 13), [{ data: "2026-10-14", ref: "almoco" }, { data: "2026-10-14", ref: "jantar" }]);
   assert.deepEqual(refeicoesDoMomento("2026-10-14", 15), [{ data: "2026-10-14", ref: "jantar" }, { data: "2026-10-15", ref: "almoco" }]);
   assert.equal(horaBrasilia(new Date("2026-10-14T05:00:00Z")), 2);
+});
+
+test("nota do Crocante no Finanças", () => {
+  const linhas = [
+    { descricao: "FILEZINHO NAT 1KG IQF.SASSAMI", valor: 24.69, item_id: "peito" },
+    { descricao: "RACAO GATO 1KG", valor: 24.9, removido: true },
+    { descricao: "CARNE MOIDA II", valor: 11.46, item_id: "carne" },
+    { descricao: "CARNE MOIDA II", valor: 9.28, item_id: "carne" },
+    { descricao: "SABAO PO 1KG", valor: 12, item_id: "sabao" },
+  ];
+  // o Finanças guardou em outra ordem
+  const fin = [
+    { id: 1, ordem: 1, descricao: "FILEZINHO NAT 1KG IQF.SASSAMI", valor_total: 24.69, categoria_id: 1, categoria_origem: "loja" },
+    { id: 2, ordem: 2, descricao: "RACAO GATO 1KG", valor_total: 24.9, categoria_id: 12, categoria_origem: "regra" },
+    { id: 3, ordem: 3, descricao: "CARNE MOIDA II", valor_total: 9.28, categoria_id: 3, categoria_origem: "regra" },
+    { id: 4, ordem: 4, descricao: "CARNE MOIDA II", valor_total: 11.46, categoria_id: 3, categoria_origem: "regra" },
+    { id: 5, ordem: 5, descricao: "SABAO PO 1KG", valor_total: 12, categoria_id: 13, categoria_origem: "manual" },
+  ];
+  const pares = parearItensFinancas(linhas, fin);
+  assert.equal(pares.length, 5);
+  assert.equal(pares.find((p) => p.linha.valor === 9.28).item.id, 3);
+  const secao = { peito: "acougue", carne: "acougue", sabao: "limpeza" };
+  const cats = { "Carnes e frios": 3, Limpeza: 9, Mercado: 1 };
+  const mudar = categoriasParaFinancas(pares, (l) => secao[l.item_id], cats);
+  // peito vira Carnes e frios; carne moída já era 3 mas marca a origem; ração (fora do plano) e sabão (escolha manual) ficam
+  assert.deepEqual(mudar.map((m) => [m.id, m.categoria_id]).sort(), [[1, 3], [3, 3], [4, 3]]);
+  assert.equal(categoriaDominante([{ categoria_id: 3, valor_total: 20 }, { categoria_id: 12, valor_total: 24.9 }, { categoria_id: 3, valor_total: 11 }]), 3);
 });

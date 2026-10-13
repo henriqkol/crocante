@@ -568,3 +568,56 @@ export function refeicoesDoMomento(hoje, hora) {
     ? [{ data: hoje, ref: "almoco" }, { data: hoje, ref: "jantar" }]
     : [{ data: hoje, ref: "jantar" }, { data: addDias(hoje, 1), ref: "almoco" }];
 }
+
+// ------------------------------------------------------------------ Crocante → Finanças da Casa
+/** Categoria do Finanças para cada seção do mercado do Crocante (pelo nome da categoria). */
+export const CATEGORIA_DA_SECAO = {
+  hortifruti: "Hortifruti", padaria: "Padaria", acougue: "Carnes e frios", frios: "Carnes e frios",
+  congelados: "Mercado", leite: "Mercado", mercearia: "Mercado", molhos: "Mercado",
+  doces: "Doces e snacks", bebidas: "Bebidas", higiene: "Higiene e beleza", limpeza: "Limpeza",
+};
+/** Origens de categoria do Finanças que o Crocante não mexe: são escolhas da casa. */
+export const ORIGENS_DA_CASA = new Set(["manual", "aprendida"]);
+/**
+ * Junta as linhas da nota do Crocante com os itens da mesma nota no Finanças (mesma leitura da SEFAZ).
+ * Primeiro pela posição quando descrição e valor batem; o que sobrar, pela descrição e valor (ou só descrição).
+ * Retorna [{linha, item}] (item = nota_itens do Finanças).
+ */
+export function parearItensFinancas(linhas, itensFin) {
+  const fin = [...itensFin].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+  const usados = new Set(), pares = [];
+  const mesmaDesc = (l, i) => normalizar(l.descricao).trim() === normalizar(i.descricao).trim();
+  const sobra = [];
+  linhas.forEach((l, k) => {
+    const i = fin[k];
+    if (i && !usados.has(i.id) && mesmaDesc(l, i) && Math.abs(Number(i.valor_total) - Number(l.valor)) < 0.011) { usados.add(i.id); pares.push({ linha: l, item: i }); } else sobra.push(l);
+  });
+  for (const l of sobra) {
+    const i = fin.find((x) => !usados.has(x.id) && mesmaDesc(l, x) && Math.abs(Number(x.valor_total) - Number(l.valor)) < 0.011)
+      ?? fin.find((x) => !usados.has(x.id) && mesmaDesc(l, x));
+    if (i) { usados.add(i.id); pares.push({ linha: l, item: i }); }
+  }
+  return pares;
+}
+/** Categoria do gasto = a que mais pesa nos itens da nota (mesma regra do Finanças). */
+export function categoriaDominante(itens) {
+  const soma = new Map();
+  for (const i of itens) if (i.categoria_id != null) soma.set(i.categoria_id, (soma.get(i.categoria_id) ?? 0) + Number(i.valor_total || 0));
+  let melhor = null, max = -1;
+  for (const [id, v] of soma) if (v > max) { max = v; melhor = id; }
+  return melhor;
+}
+/**
+ * O que mudar nos itens do Finanças: linhas ligadas a itens do plano ganham a categoria da seção,
+ * a menos que a casa já tenha escolhido (manual/aprendida). Linhas fora do plano ficam como o Finanças classificou.
+ * secaoDaLinha(linha) → chave da seção; catPorNome = {nome: id}. Retorna [{id, categoria_id}].
+ */
+export function categoriasParaFinancas(pares, secaoDaLinha, catPorNome) {
+  const mudar = [];
+  for (const { linha, item } of pares) {
+    if (!linha.item_id || linha.removido || ORIGENS_DA_CASA.has(item.categoria_origem)) continue;
+    const cat = catPorNome[CATEGORIA_DA_SECAO[secaoDaLinha(linha)]];
+    if (cat && (cat !== item.categoria_id || item.categoria_origem !== "crocante")) mudar.push({ id: item.id, categoria_id: cat });
+  }
+  return mudar;
+}
