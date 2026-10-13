@@ -254,3 +254,8 @@ details.mais > summary::-webkit-details-marker { display: none; }
 ol.passos { margin: 0; padding: 0; list-style: none; counter-reset: p; display: flex; flex-direction: column; }
 ul.simples { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 @media (min-width: 600px) { .conteudo { padding-top: 28px; } }
+
+/* aviso de nova versão (quando não dá para recarregar sozinho) */
+.aviso-atualizacao { position: fixed; left: 16px; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 60;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 16px;
+  background: var(--paper); color: var(--ink); border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.35); font-size: 14px; }

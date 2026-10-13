@@ -1,6 +1,6 @@
 // Crocante — app (PWA). Sem build: módulos ES direto no navegador, como o Finanças da Casa.
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, FUNCAO, VERSAO } from "./config.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, FUNCAO, VERSAO, PUBLICACAO } from "./config.js";
 import { iniciarLeitor } from "./scanner.js";
 import * as L from "./logica.js";
 import { PRATOS, RECEITAS, PREPARO, COMO, SORTEIO, CAFE, LANCHE, DOCES, DICAS, TIPO, CAT } from "./dados.js";
@@ -1614,9 +1614,62 @@ function sessaoPeloGoogle(session) {
   } catch { return true; }
 }
 
+// ------------------------------------------------------------------ atualização automática
+// Cada publicação grava o commit em versao.txt e em config.js (PUBLICACAO). Ao abrir, ao voltar para o app e a cada 30 min,
+// o app compara: se mudou, atualiza o service worker e recarrega sozinho quando não há nada pela metade
+// (folha aberta, câmera, nota em revisão, campo sendo digitado); senão mostra o aviso "Atualizar".
+let verificandoVersao = false;
+const TELAS_OCUPADAS = new Set(["escanear", "nota", "comparar", "novo-plano"]);
+function momentoSeguro() {
+  const ativo = document.activeElement;
+  return folha.hidden && !TELAS_OCUPADAS.has(rotaAtual().nome) && !(ativo && ativo.matches?.("input, textarea, select"));
+}
+async function novaPublicacao() {
+  if (PUBLICACAO === "local" || !navigator.onLine) return null;
+  const r = await fetch(`versao.txt?t=${Date.now()}`, { cache: "no-store" });
+  if (!r.ok) return null;
+  const v = (await r.text()).trim();
+  return v && v !== PUBLICACAO ? v : null;
+}
+async function aplicarAtualizacao() {
+  const reg = await navigator.serviceWorker?.getRegistration().catch(() => null);
+  if (reg) {
+    // espera o service worker novo assumir (ele chama skipWaiting/clients.claim), no máximo 5 s
+    const assumiu = new Promise((ok) => { navigator.serviceWorker.addEventListener("controllerchange", ok, { once: true }); setTimeout(ok, 5000); });
+    await reg.update().catch(() => {});
+    if (reg.installing || reg.waiting) await assumiu;
+  }
+  location.reload();
+}
+async function verificarAtualizacao() {
+  if (verificandoVersao) return;
+  verificandoVersao = true;
+  try {
+    const v = await novaPublicacao();
+    if (!v) return;
+    let jaTentou = null;
+    try { jaTentou = sessionStorage.getItem("crocAtualizou"); sessionStorage.setItem("crocAtualizou", v); } catch { /* sem armazenamento */ }
+    if (jaTentou !== v && momentoSeguro()) return aplicarAtualizacao();
+    mostrarAvisoAtualizacao();
+  } catch { /* sem rede: tenta na próxima */ } finally { verificandoVersao = false; }
+}
+function mostrarAvisoAtualizacao() {
+  if (document.getElementById("avisoAtualizacao")) return;
+  const d = document.createElement("div");
+  d.id = "avisoAtualizacao";
+  d.className = "aviso-atualizacao";
+  d.innerHTML = `<span>Nova versão do Crocante.</span><button class="pilula cheia" data-acao="atualizarApp">Atualizar</button>`;
+  document.body.append(d);
+}
+acoes.atualizarApp = () => aplicarAtualizacao();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") verificarAtualizacao(); });
+window.addEventListener("online", verificarAtualizacao);
+setInterval(verificarAtualizacao, 30 * 60 * 1000);
+
 // ------------------------------------------------------------------ início
 async function iniciar() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
+  setTimeout(verificarAtualizacao, 3000);
   let session = null;
   const semResposta = new Promise((ok) => setTimeout(() => ok({ data: { session: null } }), 8000));
   ({ data: { session } } = await Promise.race([sb.auth.getSession().catch(() => ({ data: { session: null } })), semResposta]));

@@ -1,5 +1,5 @@
 // Service worker: permite instalar o app, abrir sem internet e receber os lembretes.
-// Estratégia "rede primeiro": com internet, sempre pega a versão mais nova.
+// Estratégia "rede primeiro": com internet, sempre pega a versão mais nova (o app também confere versao.txt ao voltar para a tela).
 const CACHE = "crocante-v9";
 const BASICO = ["./", "index.html", "estilo.css", "app.js", "logica.js", "dados.js", "compras.js", "scanner.js", "config.js", "manifest.webmanifest",
   "icons/crocante-192.png", "icons/badge-96.png", "icons/favicon-64.png", "vendor/jsQR.min.js",
@@ -19,8 +19,10 @@ self.addEventListener("fetch", (e) => {
   const mesmaOrigem = url.origin === self.location.origin;
   const biblioteca = url.hostname === "cdn.jsdelivr.net";
   if (!mesmaOrigem && !biblioteca) return; // dados (Supabase) nunca vão para o cache
+  // "no-cache": sempre confere com o servidor (resposta 304 é leve), então uma publicação nova chega na hora
+  const pedido = mesmaOrigem ? new Request(e.request, { cache: "no-cache" }) : e.request;
   e.respondWith(
-    fetch(e.request)
+    fetch(pedido)
       .then((r) => {
         if (r.ok) { const copia = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copia)); }
         return r;

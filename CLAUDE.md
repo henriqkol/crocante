@@ -45,6 +45,10 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 - Pessoas multiplica as quantidades (kg em passos de 50 g, unidades para cima). Vale para planos novos.
 - Lembretes na véspera (19h/20h/21h, escolha de cada aparelho): descongelar (`descongelarParaAmanha`, pelo cardápio real), mercado de amanhã, preparo de domingo. 14h: escanear nota da compra de hoje. 18h: jantar (desligado por padrão). Orçamento: aviso único por plano quando a sobra prevista fica < R$ 30 ou negativa (após salvar compra).
 
+## Atualização automática
+- O workflow grava o commit em `app/versao.txt` e em `config.js` (`PUBLICACAO`, "local" no repositório). O app confere `versao.txt` (sem cache) ao abrir, ao voltar para a tela e a cada 30 min; se mudou, atualiza o service worker e recarrega sozinho quando não há nada pela metade (`momentoSeguro`), senão mostra o aviso "Atualizar". Uma tentativa automática por versão (`sessionStorage.crocAtualizou`).
+- O service worker busca os arquivos do app com `cache: "no-cache"` (revalida com o servidor) e é registrado com `updateViaCache: "none"`. Não precisa mais subir a versão do cache à mão; `VERSAO` em config.js é só o número mostrado em Casa.
+
 ## Visual
 Campos de dinheiro (`campoDinheiro`, atributo `data-dinheiro`): os dígitos entram pelos centavos e o campo começa em 0,00 (1200 → 12,00; 59 → 0,59); lidos com `numero()`.
 Design system GranDom (fontes Doto, Space Grotesk, Space Mono em `app/fonts`). Tema escuro padrão, claro pelo aparelho ou em Casa → Aparência. Ícone: caixinha de batata frita em pixel (`app/icons`).

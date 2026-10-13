@@ -20,7 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Nova versão do cache (celulares pegam a atualização)
-        run: sed -i -E "s/crocante-v[0-9]+/crocante-${GITHUB_SHA::8}/" app/sw.js
+        run: |
+          sed -i -E "s/crocante-v[0-9]+/crocante-${GITHUB_SHA::8}/" app/sw.js
+          # o app compara PUBLICACAO com versao.txt para se atualizar sozinho
+          sed -i -E "s/PUBLICACAO = \"local\"/PUBLICACAO = \"${GITHUB_SHA::8}\"/" app/config.js
+          echo "${GITHUB_SHA::8}" > app/versao.txt
+          grep -q "${GITHUB_SHA::8}" app/config.js
       - name: Publica no ramo gh-pages
         run: |
           cp privacidade.html app/privacidade.html   # política de privacidade (exigida pelo Google)
