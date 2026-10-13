@@ -472,8 +472,6 @@ async function telaCompras(n) {
   const total = L.somaItens(c.itens);
   const noCarrinho = L.somaItens(c.itens.filter((i) => i.marcado));
   const ehSemana = c.tipo === "semana";
-  const ocupado = ehSemana ? L.congeladorDaSemana(c.semana - 1, c.itens, planoParaLogica()) : 0;
-  const cap = estado.config.congelador;
   const filtro = estado.filtroCarrinho ?? "todos";
   const nMarcados = c.itens.filter((i) => i.marcado).length;
   const passaFiltro = (i) => filtro === "todos" || (filtro === "marcados" ? i.marcado : !i.marcado);
@@ -485,8 +483,6 @@ async function telaCompras(n) {
   const sub = ehSemana
     ? `Sáb ${L.dataCurta(c.data)}, véspera do preparo de domingo ${L.dataCurta(L.addDias(c.data, 1))}. Só o que essa semana usa.`
     : `Sáb ${L.dataCurta(c.data)}, junto com a semana 1. Itens que duram o mês inteiro.`;
-  const notaFreezer = ocupado > cap ? `Passou do espaço: congele as bases em saquinhos achatados ou deixe os nuggets para a semana seguinte.`
-    : ocupado >= cap - 1 ? `Quase cheio: use primeiro o que já estava congelado.` : `Cabe com folga.`;
   app.innerHTML = `${topo()}<div class="conteudo">
     <div class="cabeca"><div class="eyebrow">COMPRAS · ${esc(nomeMes(estado.plano.inicio).toUpperCase())}</div>
       <div class="segmentos" role="group" aria-label="Escolher compra">
@@ -501,11 +497,7 @@ async function telaCompras(n) {
         <div><span class="rotulo">NO CARRINHO</span><span class="numero m vermelho">${R(noCarrinho).replace("R$ ", "R$")}</span></div>
       </div>
     </section>
-    ${ehSemana ? `<section class="caixa" aria-label="Espaço no congelador">
-      <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="rotulo">CONGELADOR NESTA SEMANA</span><span class="mono" style="font-size:13px">${ocupado}/${cap} espaços</span></div>
-      <div class="celulas ${ocupado >= cap - 1 ? "lotado" : ""}" style="--n:${cap}" aria-hidden="true">${Array.from({ length: cap }, (_, i) => `<span class="${i < ocupado ? "cheia" : ""}"></span>`).join("")}</div>
-      <span class="pequeno">${notaFreezer} Bases que o cardápio desta semana manda congelar, o que já vem congelado e o bacon do mês.</span></section>`
-    : `<div class="caixa pequeno">Só o que dura o mês todo fora da geladeira. O bacon vem em cubos e ocupa 1 espaço no congelador até o fim do mês.</div>`}
+    ${ehSemana ? "" : `<div class="caixa pequeno">Só o que dura o mês todo fora da geladeira.</div>`}
     <div class="segmentos" role="group" aria-label="Filtrar itens">${filtros.map(([k, nome, n]) => `<button type="button" data-acao="filtrarCarrinho" data-f="${k}" aria-pressed="${k === filtro}">${nome}<small>${pl(n, "item", "itens")}</small></button>`).join("")}</div>
     ${grupos.length ? "" : `<p class="pequeno">${filtro === "marcados" ? "Nenhum item marcado ainda." : "Tudo marcado. Nada faltando nesta compra."}</p>`}
     ${grupos.map(([nomeSecao, its]) => `<section>
@@ -712,7 +704,15 @@ function htmlGeladeira() {
       ${its.length ? `<div class="lista">${its.map(linha).join("")}</div>` : `<p class="pequeno">${vazio}</p>`}</section>`;
   };
   const comidos = gs.filter((g) => g.comido_em).sort((a, b) => b.comido_em.localeCompare(a.comido_em));
+  // faixa do congelador: cada prato guardado lá (com porção sobrando) ocupa 1 espaço
+  const cap = Number(estado.config?.congelador ?? 10);
+  const ocupado = tem.filter((g) => g.onde === "congelador").length;
+  const faixa = `<section class="caixa" aria-label="Uso do congelador">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="rotulo">CONGELADOR AGORA</span><span class="mono" style="font-size:13px">${ocupado}/${cap} espaços</span></div>
+      <div class="celulas ${ocupado >= cap - 1 ? "lotado" : ""}" style="--n:${cap}" aria-hidden="true">${Array.from({ length: cap }, (_, i) => `<span class="${i < ocupado ? "cheia" : ""}"></span>`).join("")}</div>
+      <span class="pequeno">${ocupado > cap ? "Passou do espaço: coma primeiro o que está há mais tempo." : ocupado === cap ? "Cheio: coma algo antes de guardar mais." : ocupado === cap - 1 ? "Quase cheio: use primeiro o que já estava congelado." : ocupado ? `Cabem mais ${pl(cap - ocupado, "prato", "pratos")}.` : "Vazio."} Cada prato guardado no congelador ocupa 1 espaço.</span></section>`;
   return `${cab}
+    ${faixa}
     ${grupo("congelador", "No congelador", "Nada congelado por enquanto. Guarde as levas do domingo aqui.")}
     ${grupo("geladeira", "Na geladeira", "Nada pronto na geladeira.")}
     <button class="botao" data-acao="novoGuardado">Guardar prato</button>

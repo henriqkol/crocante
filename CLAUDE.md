@@ -41,7 +41,7 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 - Tela Hoje (`refeicoesDoMomento`, hora de Brasília): da meia-noite às 14h o almoço de hoje fica no cartão em destaque e o jantar de hoje embaixo; das 14h à meia-noite, o jantar de hoje em destaque e o almoço de amanhã embaixo.
 - Pratos só mudam de dia dentro da mesma semana ("Mudar de dia" troca dois lugares do `croc_cardapio`), então as compras continuam cobertas.
 - Preparo de domingo calculado pelo cardápio real (`preparoDaSemana`): bases de cada prato vêm de `RECEITAS[id].pre` (`basesDoPrato`); cozidos: domingo fresco, até quarta geladeira, quinta–sábado congelador; bolinhas cruas até terça na geladeira; empanados sempre no congelador; sobrecoxa/linguiça vêm congeladas da compra. Descongelar = véspera do dia do prato. "Separe" e as levas continuam do plano original (os pratos da semana são os mesmos).
-- Medidor do congelador = saquinhos calculados + itens `congela` da semana + 1 (bacon do mês). Capacidade em `croc_config.congelador`.
+- Faixa do congelador fica na tela Geladeira (saiu da tela Compras): uso atual = pratos guardados no congelador com porção sobrando, 1 espaço cada; capacidade em `croc_config.congelador`. `congeladorDaSemana` (saquinhos calculados + itens `congela` + bacon) continua só no comparativo da nota.
 - Pessoas multiplica as quantidades (kg em passos de 50 g, unidades para cima). Vale para planos novos.
 - Lembretes na véspera (19h/20h/21h, escolha de cada aparelho): descongelar (`descongelarParaAmanha`, pelo cardápio real), mercado de amanhã, preparo de domingo. 14h: escanear nota da compra de hoje. 18h: jantar (desligado por padrão). Orçamento: aviso único por plano quando a sobra prevista fica < R$ 30 ou negativa (após salvar compra).
 
