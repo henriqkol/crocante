@@ -510,7 +510,7 @@ async function telaCompras(n) {
         <button type="button" class="editar" data-acao="editarItem" data-id="${i.id}" aria-label="Editar ${esc(i.nome)}" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
           <span>${R(L.valorItem(i))}</span>${pagos.has(i.id) ? `<span style="font-size:12px;color:${pagos.get(i.id) > L.valorItem(i) + 0.005 ? "var(--signal-2)" : "var(--fg)"}">pago ${R(pagos.get(i.id))}</span>` : notasDaCompra(c.id).length ? `<span style="font-size:11px;color:var(--fg-mute)">não veio na nota</span>` : ""}</button>
       </label>`).join("")}</div></section>`).join("")}
-    ${c.movidos?.length ? `<section><div class="secao-titulo"><h2 class="h3">Movidos para outra semana</h2></div>
+    ${c.movidos?.length ? `<section><div class="secao-titulo"><h2 class="h3">Movidos para outra lista</h2></div>
       <div class="lista">${c.movidos.map((i) => { const d = compraPorId(i.movido_para); return `<div class="linha" style="opacity:.7"><span class="cresce"><span class="riscado">${esc(i.nome)}</span><span class="pequeno">${esc(L.qtdTexto(i.qtd, i.unidade))} · foi para a ${esc(d ? nomeCompra(d).toLowerCase() : "outra compra")}</span></span><span class="valor">${R(L.valorItem(i))}</span></div>`; }).join("")}</div></section>` : ""}
     <div class="pilulas"><button class="pilula" data-acao="novoItem" data-compra="${c.id}">+ Adicionar item</button>
       ${c.pago == null ? `<button class="pilula" data-acao="pagarSemNota" data-compra="${c.id}">Já paguei, sem nota</button>` : `<button class="pilula" data-acao="desfazerPago" data-compra="${c.id}">Reabrir compra</button>`}</div>
@@ -581,11 +581,9 @@ function lerFormItem() {
 acoes.editarItem = (el, e) => {
   e.stopPropagation();
   const [, it] = itemPorId(el.dataset.id);
-  const [c] = itemPorId(el.dataset.id);
-  const prox = c.tipo === "semana" && c.semana < 4 ? estado.compras.find((x) => x.tipo === "semana" && x.semana === c.semana + 1) : null;
   abrirFolha(`<h2 class="h2">Editar item</h2>${formItem(it)}
     <button class="botao" data-acao="salvarItem" data-id="${it.id}">Salvar</button>
-    ${prox ? `<button class="pilula" data-acao="moverItem" data-id="${it.id}" data-para="${prox.id}">Mover para a semana ${prox.semana}</button>` : ""}
+    ${estado.compras.length > 1 ? `<button class="pilula" data-acao="escolherDestino" data-id="${it.id}" data-origem="editar">Mover para outra lista…</button>` : ""}
     <button class="link-mono" data-acao="removerItem" data-id="${it.id}">REMOVER DA LISTA</button>`);
 };
 acoes.salvarItem = async (el) => {
@@ -1192,7 +1190,6 @@ function telaComparar() {
   const linhasOutras = outras.flatMap((n) => (n.linhas ?? []).map((l) => ({ ...l, de_outra: true })));
   const cmp = L.compararNota(c.itens, [...linhasOutras, ...r.linhas]);
   const desta = L.compararNota(c.itens, r.linhas);
-  const proxima = c.tipo === "semana" && c.semana < 4 ? estado.compras.find((x) => x.tipo === "semana" && x.semana === c.semana + 1) : null;
   const pagoOutras = outras.reduce((s, n) => s + Number(n.conta_no_plano), 0);
   const antes = resumo();
   const depois = L.resumoOrcamento(estado.compras.map((x) => (x.id === c.id ? { ...x, pago: L.arred2(pagoOutras + desta.contaNoPlano) } : x)), Number(estado.plano.orcamento));
@@ -1208,7 +1205,7 @@ function telaComparar() {
     </section>
     ${cmp.faltou.length ? `<section class="contorno alerta"><span class="rotulo alerta">FALTOU ${nNotas > 1 ? "NAS NOTAS" : "NA NOTA"} · ${cmp.faltou.length}</span>
       ${cmp.faltou.map((f) => { const passado = r.passados.includes(f.id); return `<div style="display:flex;gap:12px;align-items:center"><span style="flex:1">${esc(f.nome)} · <span class="mono pequeno">${R(f.planejado)}</span></span>
-        ${proxima ? (passado ? `<span class="etiqueta">NA SEM. ${proxima.semana} ✓</span>` : `<button class="pilula cheia" data-acao="passarItem" data-id="${f.id}" data-para="${proxima.id}">Passar p/ sem. ${proxima.semana}</button>`) : ""}</div>`; }).join("")}
+        ${passado ? `<span class="etiqueta">${esc((nomeCompra(compraPorId(c.movidos?.find((m) => m.id === f.id)?.movido_para) ?? { tipo: "semana", semana: "?" })).toUpperCase())} ✓</span>` : `<button class="pilula cheia" data-acao="escolherDestino" data-id="${f.id}" data-origem="nota">Mover…</button>`}</div>`; }).join("")}
       <p class="pequeno">Ainda vai escanear outra nota desta compra? Salve esta e adicione a próxima: os itens dela saem daqui.</p></section>` : ""}
     ${cmp.comprados.length ? `<section style="display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 class="h2">Item a item</h2><span class="rotulo">− BARATO · CARO +</span></div>
@@ -1240,15 +1237,28 @@ async function moverItem(itemId, paraId) {
   if (!para.itens.some((x) => x.id === novo.id)) para.itens.push(novo);
   c.itens = c.itens.filter((x) => x.id !== it.id);
   c.movidos = [...(c.movidos ?? []).filter((x) => x.id !== it.id), { ...it, movido_para: para.id }];
-  avisar(`${it.nome} vai para a semana ${para.semana}`);
+  avisar(`${it.nome} vai para a ${nomeCompra(para).toLowerCase()}`);
   return it;
 }
+/** Folha para escolher qualquer outra lista do plano (mês ou semanas) como destino do item. */
+acoes.escolherDestino = (el) => {
+  const [c, it] = itemPorId(el.dataset.id);
+  if (!it) return;
+  const acao = el.dataset.origem === "nota" ? "passarItem" : "moverItem";
+  const outras = estado.compras.filter((x) => x.id !== c.id);
+  abrirFolha(`<h2 class="h2">Mover ${esc(it.nome.toLowerCase())}</h2>
+    <p class="pequeno">Sai da ${esc(nomeCompra(c).toLowerCase())} (fica riscado em "Movidos") e entra na lista escolhida com a mesma quantidade e preço.</p>
+    <div class="lista">${outras.map((x) => { const st = statusCompra(x); return `<button class="linha" data-acao="${acao}" data-id="${it.id}" data-para="${x.id}">
+      <span class="cresce"><span>${esc(nomeCompra(x))}</span><span class="pequeno">${L.DIAS_CURTOS[L.diaSemana(x.data)]} ${L.dataCurta(x.data)} · ${pl(x.itens.length, "item", "itens")}${compraConcluida(x) ? " · concluída" : x.pago != null ? " · já paga" : ""}</span></span>
+      <span class="rotulo ${st.tipo === "alerta" ? "alerta" : ""}">${esc(st.txt)}</span></button>`; }).join("")}</div>
+    <button class="link-mono" data-acao="fecharFolha">CANCELAR</button>`);
+};
 acoes.moverItem = async (el) => {
   try { await moverItem(el.dataset.id, el.dataset.para); fecharFolha(); desenhar(); }
   catch (e) { avisar(e.message, true); }
 };
 acoes.passarItem = async (el) => {
-  try { const it = await moverItem(el.dataset.id, el.dataset.para); estado.rascunho.passados.push(it.id); guardarRascunho(); desenhar(); }
+  try { const it = await moverItem(el.dataset.id, el.dataset.para); estado.rascunho.passados.push(it.id); guardarRascunho(); fecharFolha(); desenhar(); }
   catch (e) { avisar(e.message, true); }
 };
 /** Grava o que a casa corrigiu ou confirmou à mão, para as próximas notas. */
