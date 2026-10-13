@@ -500,6 +500,7 @@ async function telaCompras(n) {
     ${ehSemana ? "" : `<div class="caixa pequeno">Só o que dura o mês todo fora da geladeira.</div>`}
     <div class="segmentos" role="group" aria-label="Filtrar itens">${filtros.map(([k, nome, n]) => `<button type="button" data-acao="filtrarCarrinho" data-f="${k}" aria-pressed="${k === filtro}">${nome}<small>${pl(n, "item", "itens")}</small></button>`).join("")}</div>
     ${grupos.length ? "" : `<p class="pequeno">${filtro === "marcados" ? "Nenhum item marcado ainda." : "Tudo marcado. Nada faltando nesta compra."}</p>`}
+    ${filtro === "faltam" && c.itens.length - nMarcados > 0 && estado.compras.length > 1 ? `<button class="link-mono" data-acao="moverDesmarcados" data-compra="${c.id}">MOVER ${c.itens.length - nMarcados === 1 ? "O DESMARCADO" : `OS ${c.itens.length - nMarcados} DESMARCADOS`} PARA…</button>` : ""}
     ${grupos.map(([nomeSecao, its]) => `<section>
       <div class="secao-titulo"><h2 class="h3">${esc(nomeSecao)}</h2><span style="display:flex;flex-direction:column;align-items:flex-end"><span class="mono pequeno">${R(L.somaItens(its))}</span>${pagos.size && its.some((i) => pagos.has(i.id)) ? `<span class="mono" style="font-size:11px;color:var(--fg-mute)">pago ${R(pagoGrupo(its))}</span>` : ""}</span></div>
       <div>${its.map((i) => `<label class="check ${i.marcado ? "feito" : ""}">
@@ -1189,6 +1190,7 @@ function telaComparar() {
   const outras = notasDaCompra(c.id, r.nota_id);
   const linhasOutras = outras.flatMap((n) => (n.linhas ?? []).map((l) => ({ ...l, de_outra: true })));
   const cmp = L.compararNota(c.itens, [...linhasOutras, ...r.linhas]);
+  estado.moverFaltaram = cmp.faltou.filter((f) => !r.passados.includes(f.id)).map((f) => f.id);
   const desta = L.compararNota(c.itens, r.linhas);
   const pagoOutras = outras.reduce((s, n) => s + Number(n.conta_no_plano), 0);
   const antes = resumo();
@@ -1203,7 +1205,8 @@ function telaComparar() {
       <p class="lead">${cmp.diferenca > 0 ? "acima" : cmp.diferenca < 0 ? "abaixo" : "igual ao"} do planejado para o que você comprou${cmp.planejadoComprado ? ` (${cmp.diferenca >= 0 ? "+" : "−"}${Math.abs((cmp.diferenca / cmp.planejadoComprado) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)` : ""}${nNotas > 1 ? ", somando todas as notas desta compra" : ""}</p>
       <div class="grade"><div><span class="rotulo">PLANEJADO</span><span class="mono" style="font-size:17px">${R(cmp.planejadoComprado)}</span></div><div><span class="rotulo">${nNotas > 1 ? "NAS NOTAS" : "NA NOTA"}</span><span class="mono" style="font-size:17px">${R(cmp.pagoComprado)}</span></div></div>
     </section>
-    ${cmp.faltou.length ? `<section class="contorno alerta"><span class="rotulo alerta">FALTOU ${nNotas > 1 ? "NAS NOTAS" : "NA NOTA"} · ${cmp.faltou.length}</span>
+    ${cmp.faltou.length ? `<section class="contorno alerta"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><span class="rotulo alerta">FALTOU ${nNotas > 1 ? "NAS NOTAS" : "NA NOTA"} · ${cmp.faltou.length}</span>
+      ${cmp.faltou.filter((f) => !r.passados.includes(f.id)).length > 1 ? `<button class="pilula" data-acao="moverFaltaram">Mover todos…</button>` : ""}</div>
       ${cmp.faltou.map((f) => { const passado = r.passados.includes(f.id); return `<div style="display:flex;gap:12px;align-items:center"><span style="flex:1">${esc(f.nome)} · <span class="mono pequeno">${R(f.planejado)}</span></span>
         ${passado ? `<span class="etiqueta">${esc((nomeCompra(compraPorId(c.movidos?.find((m) => m.id === f.id)?.movido_para) ?? { tipo: "semana", semana: "?" })).toUpperCase())} ✓</span>` : `<button class="pilula cheia" data-acao="escolherDestino" data-id="${f.id}" data-origem="nota">Mover…</button>`}</div>`; }).join("")}
       <p class="pequeno">Ainda vai escanear outra nota desta compra? Salve esta e adicione a próxima: os itens dela saem daqui.</p></section>` : ""}
@@ -1228,38 +1231,57 @@ function telaComparar() {
   </div>
   <div class="rodape-fixo"><button class="botao" data-acao="salvarNota">${r.nota_id ? "Salvar revisão" : `Salvar nota da ${esc(nomeCompra(c).toLowerCase())}`}</button></div>`;
 }
-/** Passa o item para outra compra: a cópia vai para lá e o original fica marcado como movido (sai do planejado daqui). */
-async function moverItem(itemId, paraId) {
-  const [c, it] = itemPorId(itemId);
+/** Passa itens para outra compra: a cópia vai para lá e o original fica marcado como movido (sai do planejado daqui). */
+async function moverItens(ids, paraId) {
   const para = compraPorId(paraId);
-  const novo = await q(sb.from("croc_itens").insert({ compra_id: para.id, chave: it.chave, nome: it.nome, qtd: it.qtd, unidade: it.unidade, preco: it.preco, local: it.local, secao: it.secao ?? null, coringa: it.coringa, congela: it.congela, ordem: it.ordem }).select().single());
-  await q(sb.from("croc_itens").update({ movido_para: para.id }).eq("id", it.id));
-  if (!para.itens.some((x) => x.id === novo.id)) para.itens.push(novo);
-  c.itens = c.itens.filter((x) => x.id !== it.id);
-  c.movidos = [...(c.movidos ?? []).filter((x) => x.id !== it.id), { ...it, movido_para: para.id }];
-  avisar(`${it.nome} vai para a ${nomeCompra(para).toLowerCase()}`);
-  return it;
+  const pares = ids.map((id) => itemPorId(id)).filter(([c, it]) => c && it && c.id !== para.id);
+  if (!pares.length) return [];
+  const copias = pares.map(([, it]) => ({ compra_id: para.id, chave: it.chave, nome: it.nome, qtd: it.qtd, unidade: it.unidade, preco: it.preco, local: it.local, secao: it.secao ?? null, coringa: it.coringa, congela: it.congela, ordem: it.ordem }));
+  const novos = await q(sb.from("croc_itens").insert(copias).select());
+  await q(sb.from("croc_itens").update({ movido_para: para.id }).in("id", pares.map(([, it]) => it.id)));
+  for (const n of novos) if (!para.itens.some((x) => x.id === n.id)) para.itens.push(n);
+  for (const [c, it] of pares) {
+    c.itens = c.itens.filter((x) => x.id !== it.id);
+    c.movidos = [...(c.movidos ?? []).filter((x) => x.id !== it.id), { ...it, movido_para: para.id }];
+  }
+  avisar(pares.length === 1 ? `${pares[0][1].nome} vai para a ${nomeCompra(para).toLowerCase()}` : `${pares.length} itens vão para a ${nomeCompra(para).toLowerCase()}`);
+  return pares.map(([, it]) => it);
 }
-/** Folha para escolher qualquer outra lista do plano (mês ou semanas) como destino do item. */
-acoes.escolherDestino = (el) => {
-  const [c, it] = itemPorId(el.dataset.id);
-  if (!it) return;
-  const acao = el.dataset.origem === "nota" ? "passarItem" : "moverItem";
+const moverItem = async (itemId, paraId) => (await moverItens([itemId], paraId))[0];
+/** Folha para escolher qualquer outra lista do plano (mês ou semanas) como destino de um ou vários itens. */
+function folhaDestino(ids, origem) {
+  const [c, primeiro] = itemPorId(ids[0]);
+  if (!primeiro) return;
+  estado.moverIds = ids;
+  estado.moverOrigem = origem;
   const outras = estado.compras.filter((x) => x.id !== c.id);
-  abrirFolha(`<h2 class="h2">Mover ${esc(it.nome.toLowerCase())}</h2>
-    <p class="pequeno">Sai da ${esc(nomeCompra(c).toLowerCase())} (fica riscado em "Movidos") e entra na lista escolhida com a mesma quantidade e preço.</p>
-    <div class="lista">${outras.map((x) => { const st = statusCompra(x); return `<button class="linha" data-acao="${acao}" data-id="${it.id}" data-para="${x.id}">
+  const titulo = ids.length === 1 ? `Mover ${esc(primeiro.nome.toLowerCase())}` : `Mover ${ids.length} itens`;
+  const nomes = ids.length > 1 ? `<p class="pequeno">${esc(ids.map((id) => itemPorId(id)[1]?.nome).filter(Boolean).join(", "))}</p>` : "";
+  abrirFolha(`<h2 class="h2">${titulo}</h2>${nomes}
+    <p class="pequeno">${ids.length === 1 ? "Sai" : "Saem"} da ${esc(nomeCompra(c).toLowerCase())} (${ids.length === 1 ? "fica riscado" : "ficam riscados"} em "Movidos") e ${ids.length === 1 ? "entra" : "entram"} na lista escolhida com a mesma quantidade e preço.</p>
+    <div class="lista">${outras.map((x) => { const st = statusCompra(x); return `<button class="linha" data-acao="moverParaLista" data-para="${x.id}">
       <span class="cresce"><span>${esc(nomeCompra(x))}</span><span class="pequeno">${L.DIAS_CURTOS[L.diaSemana(x.data)]} ${L.dataCurta(x.data)} · ${pl(x.itens.length, "item", "itens")}${compraConcluida(x) ? " · concluída" : x.pago != null ? " · já paga" : ""}</span></span>
       <span class="rotulo ${st.tipo === "alerta" ? "alerta" : ""}">${esc(st.txt)}</span></button>`; }).join("")}</div>
     <button class="link-mono" data-acao="fecharFolha">CANCELAR</button>`);
+}
+acoes.escolherDestino = (el) => folhaDestino([el.dataset.id], el.dataset.origem);
+/** "Mover os N desmarcados para…" (lista de compras) e "Mover todos que faltaram…" (comparativo da nota). */
+acoes.moverDesmarcados = (el) => {
+  const c = compraPorId(el.dataset.compra);
+  const ids = c.itens.filter((i) => !i.marcado).map((i) => i.id);
+  if (ids.length) folhaDestino(ids, "lista");
 };
-acoes.moverItem = async (el) => {
-  try { await moverItem(el.dataset.id, el.dataset.para); fecharFolha(); desenhar(); }
-  catch (e) { avisar(e.message, true); }
+acoes.moverFaltaram = () => {
+  const ids = (estado.moverFaltaram ?? []).filter((id) => itemPorId(id)[1]);
+  if (ids.length) folhaDestino(ids, "nota");
 };
-acoes.passarItem = async (el) => {
-  try { const it = await moverItem(el.dataset.id, el.dataset.para); estado.rascunho.passados.push(it.id); guardarRascunho(); fecharFolha(); desenhar(); }
-  catch (e) { avisar(e.message, true); }
+acoes.moverParaLista = async (el) => {
+  try {
+    const movidos = await moverItens(estado.moverIds ?? [], el.dataset.para);
+    if (estado.moverOrigem === "nota" && estado.rascunho) { estado.rascunho.passados.push(...movidos.map((it) => it.id)); guardarRascunho(); }
+    estado.moverIds = null;
+    fecharFolha(); desenhar();
+  } catch (e) { avisar(e.message, true); }
 };
 /** Grava o que a casa corrigiu ou confirmou à mão, para as próximas notas. */
 async function aprender(c, linhas) {
