@@ -550,7 +550,15 @@ function linhaComprado(cq) {
   if (!cq) return "";
   const cor = cq.confere === "menos" ? "var(--signal-2)" : cq.confere === true ? "var(--fg-mute)" : "var(--fg-dim)";
   const sinal = cq.confere === true ? " ✓" : cq.confere === "menos" ? " · veio menos" : cq.confere === "mais" ? " · veio mais" : "";
-  return `<span class="mono" style="font-size:11px;color:${cor}">comprou ${esc(cq.texto)}${sinal}</span>`;
+  // custo por medida: R$/kg, R$/L, R$/rolo ou R$/un contra o planejado (só quando dá para comparar)
+  let custo = "";
+  if (cq.preco != null && cq.precoPlano) {
+    const pct = (cq.preco / cq.precoPlano - 1) * 100;
+    const corC = pct > 5 ? "var(--signal-2)" : "var(--fg-mute)";
+    custo = `<span class="mono" style="font-size:11px;color:${corC}">${esc(L.precoPorMedidaTexto(cq.preco, cq.un))} · plano ${esc(L.precoPorMedidaTexto(cq.precoPlano, cq.un))} (${pct >= 0.5 ? "+" : pct <= -0.5 ? "−" : ""}${Math.abs(Math.round(pct))}%)</span>`;
+  }
+  const deQuanto = cq.planoMedida != null && cq.un !== "un" ? ` de ${esc(L.medidaTexto(cq.planoMedida, cq.un))}` : "";
+  return `<span class="mono" style="font-size:11px;color:${cor}">comprou ${esc(cq.texto)}${deQuanto}${sinal}</span>${custo}`;
 }
 function itemPorId(id) { for (const c of estado.compras) { const i = c.itens.find((x) => x.id === id); if (i) return [c, i]; } return [null, null]; }
 mudancas.marcar = async (el) => {
@@ -930,8 +938,8 @@ function htmlMercados() {
   if (!mercados.length) return `<p class="pequeno">Os mercados aparecem aqui depois da primeira nota escaneada.</p>`;
   const ref = modo === "cesta" ? "VS MÉDIA" : "VS PLANO";
   const explica = modo === "cesta"
-    ? "Índice de preço: quanto os mesmos produtos custam em cada mercado (por kg ou unidade), comparado à média entre os mercados. Negativo = mais barato."
-    : `Ainda não há produtos iguais comprados em dois mercados, então o índice compara cada mercado com o preço planejado (a mesma régua para todos), por kg ou unidade. Quando 2 mercados tiverem ${3} produtos em comum, o ranking passa a comparar um mercado com o outro.`;
+    ? "Índice de preço: quanto os mesmos produtos custam em cada mercado pelo custo por medida (R$/kg, R$/L, R$/rolo), comparado à média entre os mercados. Negativo = mais barato."
+    : `Ainda não há produtos iguais comprados em dois mercados, então o índice compara cada mercado com o preço planejado pelo custo por medida (R$/kg, R$/L, R$/rolo): embalagem maior ou menor não conta como preço diferente. Ficam de fora itens sem o tamanho no nome da lista. Quando 2 mercados tiverem 3 produtos em comum, o ranking passa a comparar um mercado com o outro.`;
   return `<div class="lista">${mercados.map((m, k) => `<a class="linha" href="#mercado/${encodeURIComponent(m.id)}">
       <span class="mono" style="font-size:13px;color:var(--fg-mute);min-width:22px">${String(k + 1).padStart(2, "0")}</span>
       <span class="cresce"><span>${esc(nomeMercado(m))}</span><span class="pequeno">${m.apelido ? `${esc(m.nome)} · ` : ""}${pl(m.visitas, "nota", "notas")}${m.ultima ? ` · última ${L.dataCurta(m.ultima.slice(0, 10))}` : ""}</span></span>
@@ -965,8 +973,8 @@ async function telaMercado(idCod) {
     </div>
     ${m.comuns.length ? `<section><div class="secao-titulo"><h2 class="h3">Em outros mercados</h2><span class="rotulo">PREÇO AQUI</span></div>
       <div class="lista">${m.comuns.sort((a, b) => b.preco / b.referencia - a.preco / a.referencia).map((c) => `<div class="linha"><span class="cresce"><span>${esc(c.nome)}</span>
-        <span class="pequeno">${c.outros.map((o) => `${esc(nomeMercadoPorId(o.mercado))} ${R(o.preco)}`).join(" · ")}</span></span>
-        <span class="mono" style="font-size:14px;color:${c.preco > c.referencia + 0.005 ? "var(--signal-2)" : "var(--fg)"}">${R(c.preco)}<span style="font-size:11px;color:var(--fg-mute)">/${esc(c.un)}</span></span></div>`).join("")}</div></section>` : ""}
+        <span class="pequeno">${c.outros.map((o) => `${esc(nomeMercadoPorId(o.mercado))} ${esc(L.precoPorMedidaTexto(o.preco, c.un))}`).join(" · ")}</span></span>
+        <span class="mono" style="font-size:14px;color:${c.preco > c.referencia + 0.005 ? "var(--signal-2)" : "var(--fg)"}">${esc(L.precoPorMedidaTexto(c.preco, c.un))}</span></div>`).join("")}</div></section>` : ""}
     <section><div class="secao-titulo"><h2 class="h3">Notas deste mercado</h2><span class="mono pequeno">${R(m.total)}</span></div>
       <div class="lista">${m.notas.map((n) => `<button class="linha" data-acao="verNota" data-id="${n.id}" data-mercado="${esc(m.id)}">
         <span class="cresce"><span>${n.emissao ? `${L.DIAS_CURTOS[L.diaSemana(n.emissao.slice(0, 10))]} ${L.dataCurta(n.emissao.slice(0, 10))}` : "Sem data"}</span><span class="pequeno">${esc(nomeDaCompraDaNota(n))} · ${pl((n.linhas ?? []).length, "item", "itens")}</span></span>

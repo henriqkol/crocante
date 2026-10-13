@@ -22,7 +22,8 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 - Uma compra pode ter várias notas; `pago` = soma de `conta_no_plano`. O comparativo (`telaComparar`) junta as linhas de todas as notas da compra.
 - Notas salvas reabrem pela lista "Notas desta compra" (tela Compras) para trocar vínculos, tirar do plano ou apagar; o rascunho em revisão fica em `localStorage.crocRascunho` até salvar.
 - Lista de compras tem filtro Todos / Desmarcados / Marcados acima dos itens (`estado.filtroCarrinho`, vale para todas as compras até fechar o app).
-- Lista de compras mostra, por item ligado a nota, valor planejado com "pago" abaixo e quantidade planejada com "comprou" abaixo (`quantidadeComprada`: converte as linhas para a unidade do item; peso da embalagem vem da descrição, ex. "700G"; 5% de tolerância no peso). Só exibe, não altera `qtd` do item.
+- Lista de compras mostra, por item ligado a nota, valor planejado com "pago" abaixo e quantidade planejada com "comprou" abaixo (`quantidadeComprada`, 5% de tolerância em peso/volume). Só exibe, não altera `qtd` do item.
+- Custo por medida (`compraPorMedida`): tamanho do item da lista pelo nome ("Açúcar (5 kg)", "(12 rolos)", "bandeja de 30"), por `MEDIDA_DO_ITEM` em compras.js (itens do modelo sem tamanho no nome) ou 1 kg quando vendido por kg; tamanho da linha pela descrição ("1kg", "400G", "5L", "500ML", "20UN") × quantidade, ou o peso da balança (`medidaDaLinha`, `medidaDoTexto`). Modos: "medida" (os dois lados têm tamanho: R$/kg, R$/L, R$/rolo, R$/un), "unidade" (nenhum tem: preço da unidade), "contagem" (só a nota tem: conta, mas fica fora do índice). Aparece embaixo do "comprou" na lista e no comparativo ("R$ 2,99/kg · plano R$ 4,00/kg (−25%)"), e é a base do índice dos mercados. Para um item entrar na comparação, basta pôr o tamanho no nome dele.
 - Casamento nota × lista (`casarNota`): primeiro o que a casa ensinou (`croc_aprendizado`: texto da nota sem números/unidades → chave do item, `nome:<NOME>` ou `fora`), depois as regras `busca`. Sem par: `sugerirItens` mostra os mais parecidos (abreviações, marcas no meio, trigramas). Toda escolha manual (`manual: true`) vira aprendizado ao salvar.
 
 ## Integração com o Finanças da Casa (mesmo banco e login)
@@ -33,7 +34,7 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 
 ## Mercados (tela Grana)
 - Mercado = CNPJ tirado da chave da NFC-e (`cnpjDaChave`, dígitos 7–20); sem chave, `nome:<EMITENTE>` (`mercadoDaNota`). Apelido em `croc_mercados(casa_id, mercado, apelido)` (0005); o nome da nota continua aparecendo embaixo.
-- `rankingMercados(notas, itens, apelidos)` usa todas as notas da casa (todos os planos; `carregarMercados` busca os itens ligados que não estão no plano atual). Índice de preço ponderado pelo gasto, preço por kg/unidade via `quantidadeComprada`:
+- `rankingMercados(notas, itens, apelidos)` usa todas as notas da casa (todos os planos; `carregarMercados` busca os itens ligados que não estão no plano atual). Índice de preço ponderado pelo gasto, pelo custo por medida (`compraPorMedida`; itens em modo "contagem" ficam de fora):
   - "cesta" (quando 2+ mercados têm 3+ produtos em comum): preço do mercado ÷ média dos mercados naquele produto;
   - "plano" (antes disso): valor pago ÷ quantidade comprada × preço planejado do item.
 - Rota `#mercado/<id>`: índice, gasto, "Em outros mercados" (mesmo produto, preço aqui × lá) e todas as notas; `verNota` mostra a nota só para consulta (revisar vínculos só se for do plano atual).

@@ -132,3 +132,13 @@ export const SECAO_DO_ITEM = {
 const SECAO_POR_LOCAL = { c: "congelados", g: "frios", d: "mercearia", h: "limpeza" };
 /** Seção do mercado de um item: a escolhida à mão, a do modelo ou uma pelo lugar onde é guardado. */
 export const secaoDoItem = (it) => it.secao || SECAO_DO_ITEM[it.chave] || SECAO_POR_LOCAL[it.local] || "mercearia";
+
+/**
+ * Tamanho da embalagem de itens cujo nome não diz (usado no custo por medida: R$/kg, R$/L, R$/rolo, R$/un).
+ * Itens com o tamanho no nome ("Açúcar (5 kg)") ou vendidos por kg não precisam estar aqui.
+ */
+export const MEDIDA_DO_ITEM = {
+  "leite-condensado": "395 g", "creme-leite": "200 g", mostarda: "200 g", barbecue: "400 g", "molho-tomate": "300 g",
+  maisena: "400 g", recheado: "130 g", "suco-po": "18 g", pao: "500 g", tortilha: "330 g", requeijao: "200 g",
+  detergente: "500 ml", multiuso: "500 ml",
+};

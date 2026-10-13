@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parearItensFinancas, categoriasParaFinancas, categoriaDominante, refeicoesDoMomento, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  parearItensFinancas, categoriasParaFinancas, categoriaDominante, refeicoesDoMomento, medidaDoTexto, medidaDoItem, compraPorMedida, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -167,30 +167,52 @@ test("aprendizado e sugestões na nota", () => {
 
 test("quantidade comprada na unidade do item", () => {
   const Q = (item, linhas) => quantidadeComprada(item, linhas);
+  const P = (r) => r && { q: r.q, texto: r.texto, confere: r.confere };
   // peso na balança
-  assert.deepEqual(Q({ qtd: 1, unidade: "kg" }, [{ descricao: "BATATA BRANCA OFERTA KG", qtd: 1.941, un: "KG" }]), { q: 1.941, un: "kg", texto: "1,941 kg", confere: "mais" });
-  // carne em três bandejas
+  assert.deepEqual(P(Q({ qtd: 1, unidade: "kg" }, [{ descricao: "BATATA BRANCA OFERTA KG", qtd: 1.941, un: "KG" }])), { q: 1.941, texto: "1,941 kg", confere: "mais" });
   const carne = Q({ qtd: 0.75, unidade: "kg" }, [0.294, 0.294, 0.238].map((q) => ({ descricao: "CARNE MOIDA II", qtd: q, un: "KG" })));
   assert.equal(carne.q, 0.826); assert.equal(carne.texto, "826 g"); assert.equal(carne.confere, "mais");
-  // embalagem por unidade com peso na descrição
   assert.equal(Q({ qtd: 1, unidade: "kg" }, [{ descricao: "FILEZINHO NAT 1KG IQF.SASSAMI", qtd: 1, un: "UN" }]).confere, true);
   // nota diz 1 KG mas é um pacote de 700 g
   assert.equal(Q({ qtd: 0.5, unidade: "kg" }, [{ descricao: "LINGUICA AURORA 700G FGO.", qtd: 1, un: "KG" }]).texto, "700 g");
   assert.equal(Q({ qtd: 1.5, unidade: "kg" }, [{ descricao: "SOBRECOXA NAT 1KG IQF", qtd: 1, un: "KG" }]).confere, "menos");
   assert.equal(Q({ qtd: 0.25, unidade: "Kg" }, [{ descricao: "TOMATE RASTEIRO MIUDO KG", qtd: 0.268, un: "KG" }]).confere, true);
-  // contados
+  // contados sem tamanho na lista
   assert.equal(Q({ qtd: 2, unidade: "caixinhas" }, [{ descricao: "CR.LEITE CCGL 200G TP", qtd: 1, un: "UN" }]).confere, "menos");
-  assert.deepEqual(Q({ qtd: 2, unidade: "bandeja" }, [{ descricao: "OVOS FILIPPSEN 20UN.BRANCO", qtd: 2, un: "UN" }]), { q: 2, un: "bandeja", texto: "2 bandeja", confere: true });
+  assert.deepEqual(P(Q({ qtd: 2, unidade: "bandeja" }, [{ descricao: "OVOS FILIPPSEN 20UN.BRANCO", qtd: 2, un: "UN" }])), { q: 2, texto: "2 bandeja", confere: true });
   // contado que veio a granel: mostra o peso, sem comparar
-  assert.deepEqual(Q({ qtd: 1, unidade: "pct" }, [{ descricao: "PAO FRANCES KG", qtd: 0.42, un: "KG" }]), { q: null, un: "pct", texto: "420 g", confere: null });
+  assert.deepEqual(P(Q({ qtd: 1, unidade: "pct" }, [{ descricao: "PAO FRANCES KG", qtd: 0.42, un: "KG" }])), { q: null, texto: "420 g", confere: null });
   assert.equal(Q({ qtd: 1, unidade: "kg" }, []), null);
+  // tamanho no nome do item: 2 pacotes de 1 kg contra "Açúcar (5 kg)"
+  const acucar = Q({ nome: "Açúcar (5 kg)", qtd: 1, unidade: "pct", preco: 20 }, [1, 2].map(() => ({ descricao: "ACUCAR CARAVELAS 1kg REFINAD +", qtd: 1, un: "UN1", valor: 2.99 })));
+  assert.deepEqual(P(acucar), { q: 2, texto: "2 kg", confere: "menos" });
+  assert.equal(acucar.preco, 2.99); assert.equal(acucar.precoPlano, 4);
+});
+
+test("custo por medida", () => {
+  assert.deepEqual(medidaDoTexto("Água sanitária (2 L)"), { valor: 2, un: "L" });
+  assert.deepEqual(medidaDoTexto("SUCO MAGUARY 500ML MARACUJA"), { valor: 0.5, un: "L" });
+  assert.deepEqual(medidaDoTexto("Papel higiênico (12 rolos)"), { valor: 12, un: "rolo" });
+  assert.deepEqual(medidaDoTexto("Ovos (bandeja de 30)"), { valor: 30, un: "un" });
+  assert.equal(medidaDoTexto("PAPEL HIG PLUMEX 20M C/40 F DUPLA"), null);
+  assert.deepEqual(medidaDoItem({ nome: "Mostarda", chave: "mostarda", unidade: "un" }), { valor: 0.2, un: "kg" });
+  assert.equal(medidaDoItem({ nome: "Pedra sanitária", unidade: "un" }), null);
+  // café 250 g por R$ 22,99 contra "Café (500 g)" a R$ 25: R$ 91,96/kg contra R$ 50/kg
+  const cafe = compraPorMedida({ nome: "Café (500 g)", qtd: 2, unidade: "pct", preco: 25 }, [{ descricao: "CAFE MELITTA 250G REGIOES MOGIANA", qtd: 1, un: "UN1", valor: 22.99 }]);
+  assert.equal(cafe.modo, "medida"); assert.equal(cafe.q, 0.25); assert.equal(cafe.plano, 1);
+  assert.equal(Math.round(cafe.preco * 100) / 100, 91.96); assert.equal(cafe.precoPlano, 50); assert.equal(Math.round(cafe.base * 100) / 100, 12.5);
+  // sem tamanho dos dois lados: preço da unidade
+  assert.equal(compraPorMedida({ nome: "Pano de chão", qtd: 1, unidade: "un", preco: 6 }, [{ descricao: "SACO ALKLIN 40X78CM ALGODAO CRU", qtd: 1, un: "UN1", valor: 7.99 }]).modo, "unidade");
+  // só a nota diz o tamanho: conta, mas fica fora do índice
+  const m = compraPorMedida({ nome: "Manteiga tablete", qtd: 1, unidade: "un", preco: 8.99 }, [{ descricao: "MANTEIGA TIROL 200G", qtd: 1, un: "UN1", valor: 8.99 }]);
+  assert.equal(m.modo, "contagem"); assert.equal(m.base, null);
 });
 
 test("ranking de mercados", () => {
   const itens = new Map([
     ["a", { chave: "peito", nome: "Peito de frango", qtd: 1, unidade: "kg", preco: 20 }],
     ["b", { chave: "batata", nome: "Batata inglesa", qtd: 1, unidade: "kg", preco: 5 }],
-    ["c", { chave: "ovos", nome: "Ovos", qtd: 2, unidade: "bandeja", preco: 12 }],
+    ["c", { chave: "ovos", nome: "Ovos (bandeja de 20)", qtd: 2, unidade: "bandeja", preco: 12 }],
   ]);
   const P = "43261088118021000157650340001571811062554902", V = "43261006130671000153651230000066451551667839";
   assert.equal(cnpjDaChave(P), "88118021000157");

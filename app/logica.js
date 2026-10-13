@@ -1,6 +1,6 @@
 // Lógica pura do Crocante (sem tela, sem banco). Usada pelo app, pela função do servidor e pelos testes.
 import { CARDAPIO, PREPARO, PRATOS, RECEITAS } from "./dados.js";
-import { MES, SEMANA } from "./compras.js";
+import { MES, SEMANA, MEDIDA_DO_ITEM } from "./compras.js";
 
 // ------------------------------------------------------------------ datas (sempre "AAAA-MM-DD", meio-dia UTC)
 export const pad = (n) => String(n).padStart(2, "0");
@@ -324,53 +324,111 @@ export function sugerirItens(descricao, itensCompra, n = 3) {
 
 /** Peso (em kg) da embalagem escrito na descrição da nota: "BATATA UAI 2KG" → 2, "MIST. BOLO 400G" → 0.4. */
 export function pesoDaDescricao(descricao) {
-  const m = normalizar(descricao).match(/(\d+(?:[.,]\d+)?)\s*(KG|G|GR)\b/);
-  if (!m) return null;
-  const n = Number(m[1].replace(",", "."));
-  return m[2] === "KG" ? n : n / 1000;
+  const m = medidaDoTexto(descricao);
+  return m && m.un === "kg" ? m.valor : null;
+}
+
+// ------------------------------------------------------------------ custo por medida (R$/kg, R$/L, R$/rolo, R$/un)
+const FATOR_MEDIDA = { KG: ["kg", 1], KGS: ["kg", 1], G: ["kg", 0.001], GR: ["kg", 0.001], GRS: ["kg", 0.001], L: ["L", 1], LT: ["L", 1], LTS: ["L", 1], ML: ["L", 0.001] };
+/**
+ * Tamanho escrito num texto (nome do item ou descrição da nota): "Açúcar (5 kg)" → {valor: 5, un: "kg"},
+ * "CHOC NEUGEBAUER 80G" → {0.08, kg}, "AGUA SANIT 5L" → {5, L}, "Papel higiênico (12 rolos)" → {12, rolo},
+ * "Ovos (bandeja de 30)" / "OVOS 20UN" → {30|20, un}. Sem tamanho → null.
+ */
+export function medidaDoTexto(texto) {
+  const t = normalizar(texto ?? "");
+  let m = t.match(/(\d+(?:[.,]\d+)?)\s*(KGS?|GRS?|G|ML|LTS?|L)(?![A-Z])/);
+  if (m) { const [un, f] = FATOR_MEDIDA[m[2]]; const valor = Number(m[1].replace(",", ".")) * f; if (valor > 0) return { valor: Math.round(valor * 100000) / 100000, un }; }
+  m = t.match(/(\d+)\s*ROLOS?\b/);
+  if (m) return { valor: Number(m[1]), un: "rolo" };
+  m = t.match(/BANDEJA DE (\d+)/) ?? t.match(/(\d+)\s*UN(?:\b|\.)/);
+  if (m && Number(m[1]) >= 2) return { valor: Number(m[1]), un: "un" };
+  return null;
+}
+/** Tamanho de cada unidade do item da lista: pelo nome, pela tabela MEDIDA_DO_ITEM ou 1 kg quando é vendido por kg. */
+export function medidaDoItem(item) {
+  if (String(item.unidade ?? item.un ?? "").toLowerCase() === "kg") return { valor: 1, un: "kg" };
+  return medidaDoTexto(item.nome) ?? (item.chave && MEDIDA_DO_ITEM[item.chave] ? medidaDoTexto(MEDIDA_DO_ITEM[item.chave]) : null);
+}
+/**
+ * Quanto uma linha da nota tem na medida da embalagem: linha pesada (KG) conta o peso — ou embalagens × peso quando a
+ * quantidade é inteira e a descrição diz o peso ("LINGUICA 700G", 1 KG); por unidade, quantidade × tamanho da descrição.
+ */
+export function medidaDaLinha(l) {
+  const q = Number(l.qtd ?? 1) || 1;
+  const un = String(l.un ?? "UN").toUpperCase();
+  const m = medidaDoTexto(l.descricao);
+  if (un === "KG" || un === "G") {
+    if (m && m.un === "kg" && un === "KG" && Number.isInteger(q)) return { valor: q * m.valor, un: "kg", pesada: true };
+    return { valor: un === "G" ? q / 1000 : q, un: "kg", pesada: true };
+  }
+  return m ? { valor: q * m.valor, un: m.un } : null;
+}
+/**
+ * Compara o que foi comprado com o item da lista.
+ * modo "medida": lista e nota dizem o tamanho (mesma grandeza) → quantidade e preço por kg/L/rolo/un;
+ * modo "unidade": nenhum dos dois diz o tamanho → conta unidades e compara o preço da unidade;
+ * modo "contagem": só a nota diz o tamanho → conta unidades, mas o preço não é comparável (fica fora do índice);
+ * null: não dá para converter (ex.: item contado que veio pesado).
+ * Retorna {modo, un, q, plano, valor, preco, precoPlano, base} (preco = R$ por medida pago; base = q × precoPlano).
+ */
+export function compraPorMedida(item, linhas) {
+  const ls = linhas.filter((l) => !l.removido);
+  if (!ls.length) return null;
+  const valor = arred2(ls.reduce((s, l) => s + Number(l.valor || 0), 0));
+  const mi = medidaDoItem(item);
+  const mls = ls.map(medidaDaLinha);
+  const qtdItem = Number(item.qtd), preco = Number(item.preco);
+  if (mi && mls.every((m) => m && m.un === mi.un)) {
+    const q = mls.reduce((s, m) => s + m.valor, 0);
+    const precoPlano = preco / mi.valor;
+    return { modo: "medida", un: mi.un, q: Math.round(q * 1000) / 1000, plano: Math.round(qtdItem * mi.valor * 1000) / 1000, valor, preco: q ? valor / q : null, precoPlano, base: q * precoPlano };
+  }
+  if (mls.some((m) => m && m.pesada)) return null;
+  const q = ls.reduce((s, l) => s + (Number(l.qtd ?? 1) || 1), 0);
+  const un = String(item.unidade ?? item.un ?? "un").toLowerCase();
+  if (!mi && mls.every((m) => !m)) return { modo: "unidade", un, q, plano: qtdItem, valor, preco: valor / q, precoPlano: preco, base: q * preco };
+  return { modo: "contagem", un, q, plano: qtdItem, valor, preco: null, precoPlano: null, base: null };
+}
+/** "R$ 2,99/kg", "R$ 1,29/un", "R$ 0,95/rolo". */
+export function precoPorMedidaTexto(v, un) {
+  if (v == null) return "";
+  const u = un === "kg" ? "kg" : un === "L" ? "L" : un === "rolo" ? "rolo" : "un";
+  return `${brl(v)}/${u}`;
+}
+/** Quantidade numa medida, para ler: 0,4 kg → "400 g", 0,5 L → "500 ml", 12 rolo → "12 rolos". */
+export function medidaTexto(q, un) {
+  const n = Number(q);
+  if (un === "kg") return qtdTexto(n, "kg");
+  if (un === "L") return n < 1 ? `${Math.round(n * 1000)} ml` : `${n.toLocaleString("pt-BR")} L`;
+  if (un === "rolo") return `${n} ${n === 1 ? "rolo" : "rolos"}`;
+  return `${n.toLocaleString("pt-BR")} ${un}`;
 }
 
 /**
- * Quanto do item veio nas notas, na unidade do item (para mostrar planejado × comprado).
- * Item em kg: linha em KG conta o peso; linha por unidade usa o peso da embalagem da descrição ("1KG", "700G").
- * Linha em KG com quantidade inteira e peso na descrição ("LINGUICA 700G", 1 KG) = embalagens × peso.
- * Item contado (un, pct, bandeja…): soma as unidades das linhas.
- * Retorna {q, un, texto, confere} ou null; confere = true (bate), "menos", "mais" ou null (não dá para comparar).
+ * Quanto do item veio nas notas (para mostrar planejado × comprado na lista).
+ * Usa o tamanho das embalagens quando a lista e a nota dizem (2 pacotes de 1 kg contra "Açúcar (5 kg)" = 2 kg de 5 kg);
+ * senão conta unidades. Retorna {q, un, texto, confere, preco, precoPlano, modo} ou null;
+ * confere = true (bate), "menos", "mais" ou null (não dá para comparar).
  */
 export function quantidadeComprada(item, linhas) {
+  const ativas = linhas.filter((l) => !l.removido);
+  if (!ativas.length) return null;
+  const c = compraPorMedida(item, ativas);
   const unItem = String(item.unidade ?? item.un ?? "").toLowerCase();
-  const plan = Number(item.qtd);
-  const partes = [];
-  let total = 0, mesmaUnidade = true;
-  for (const l of linhas) {
-    if (l.removido) continue;
-    const q = Number(l.qtd ?? 1) || 1;
-    const unL = String(l.un ?? "UN").toUpperCase();
-    const ehPeso = unL === "KG" || unL === "G";
-    const peso = pesoDaDescricao(l.descricao ?? "");
-    if (unItem === "kg") {
-      let kg = null;
-      if (ehPeso) kg = peso && Number.isInteger(q) && unL === "KG" ? q * peso : unL === "G" ? q / 1000 : q;
-      else if (peso) kg = q * peso;
-      if (kg == null) { mesmaUnidade = false; partes.push(`${q} ${unL.toLowerCase()}`); }
-      else { total += kg; partes.push(null); }
-    } else if (ehPeso && !(peso && Number.isInteger(q))) {
-      // item contado que veio a granel: não dá para converter
-      mesmaUnidade = false;
-      partes.push(qtdTexto(unL === "G" ? q / 1000 : q, "kg"));
-    } else { total += q; partes.push(null); }
+  if (!c) {
+    // item contado que veio a granel: mostra o peso, sem comparar
+    const kg = ativas.reduce((s, l) => s + (medidaDaLinha(l)?.valor ?? 0), 0);
+    return { q: null, un: unItem, texto: qtdTexto(Math.round(kg * 1000) / 1000, "kg"), confere: null, modo: null };
   }
-  if (!partes.length) return null;
-  total = unItem === "kg" ? Math.round(total * 1000) / 1000 : arred2(total);
-  if (!mesmaUnidade) {
-    const extras = partes.filter(Boolean);
-    const texto = [total ? qtdTexto(total, unItem) : null, ...extras].filter(Boolean).join(" + ");
-    return { q: null, un: unItem, texto, confere: null };
-  }
-  // tolerância: 5% no peso (balança), exato nas unidades
-  const tol = unItem === "kg" ? Math.max(0.02, plan * 0.05) : 1e-9;
-  const confere = Math.abs(total - plan) <= tol ? true : total < plan ? "menos" : "mais";
-  return { q: total, un: unItem, texto: qtdTexto(total, unItem), confere };
+  const medida = c.modo === "medida";
+  const unMostrar = medida ? c.un : unItem;
+  const q = medida ? c.q : arred2(c.q);
+  // tolerância: 5% em peso e volume (balança, embalagens parecidas), exato nas unidades
+  const tol = medida && c.un !== "un" && c.un !== "rolo" ? Math.max(c.un === "kg" ? 0.02 : 0.02, c.plano * 0.05) : 1e-9;
+  const confere = Math.abs(q - c.plano) <= tol ? true : q < c.plano ? "menos" : "mais";
+  const texto = medida && unItem !== c.un ? medidaTexto(q, c.un) : medida ? qtdTexto(q, "kg") : qtdTexto(q, unItem);
+  return { q, un: unMostrar, texto, confere, modo: c.modo, preco: c.preco, precoPlano: c.precoPlano, planoMedida: medida && unItem !== c.un ? c.plano : null };
 }
 
 /**
@@ -471,7 +529,8 @@ export function cnpjTexto(c) {
  * - "cesta": produtos comprados em 2+ mercados; referência = média dos mercados para aquele produto (vale quando
  *   pelo menos 2 mercados têm 3+ produtos em comum).
  * - "plano": enquanto não há produtos em comum, compara com o preço planejado de cada item (mesma régua para todos).
- * Os dois ponderam pelo valor gasto e usam o preço por kg/unidade (quantidadeComprada).
+ * Os dois ponderam pelo valor gasto e usam o custo por medida (compraPorMedida: R$/kg, R$/L, R$/rolo ou R$/un); itens em que
+ * só a nota diz o tamanho ficam de fora, para embalagem diferente não parecer preço diferente.
  */
 export function rankingMercados(notas, itens, apelidos = {}, minComuns = 3) {
   const mercados = new Map();
@@ -487,13 +546,14 @@ export function rankingMercados(notas, itens, apelidos = {}, minComuns = 3) {
     for (const [itemId, ls] of porItem) {
       const it = itens.get(itemId);
       if (!it) continue;
-      const cq = quantidadeComprada(it, ls);
-      if (!cq || !(cq.q > 0)) continue;
-      const valor = ls.reduce((s, l) => s + Number(l.valor), 0);
-      if (Number(it.preco) > 0) { m.pagoPlano += valor; m.basePlano += cq.q * Number(it.preco); m.nPlano++; }
-      const produto = destinoDoItem(it) + "|" + String(it.unidade ?? "").toLowerCase();
+      // custo por medida: só entra o que dá para comparar (tamanho na lista e na nota, ou em nenhum dos dois)
+      const cq = compraPorMedida(it, ls);
+      if (!cq || cq.base == null || !(cq.q > 0)) continue;
+      const valor = cq.valor;
+      if (Number(it.preco) > 0) { m.pagoPlano += valor; m.basePlano += cq.base; m.nPlano++; }
+      const produto = destinoDoItem(it) + "|" + cq.un;
       const pm = precos.get(produto) ?? precos.set(produto, new Map()).get(produto);
-      const p = pm.get(id) ?? pm.set(id, { valor: 0, q: 0, nome: it.nome, un: String(it.unidade ?? "").toLowerCase() }).get(id);
+      const p = pm.get(id) ?? pm.set(id, { valor: 0, q: 0, nome: it.nome, un: cq.un }).get(id);
       p.valor += valor; p.q += cq.q;
     }
   }
