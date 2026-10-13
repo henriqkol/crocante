@@ -474,7 +474,11 @@ async function telaCompras(n) {
   const ehSemana = c.tipo === "semana";
   const ocupado = ehSemana ? L.congeladorDaSemana(c.semana - 1, c.itens, planoParaLogica()) : 0;
   const cap = estado.config.congelador;
-  const grupos = SECOES.map(([k, nome]) => [nome, c.itens.filter((i) => secaoDoItem(i) === k).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))]).filter(([, its]) => its.length);
+  const filtro = estado.filtroCarrinho ?? "todos";
+  const nMarcados = c.itens.filter((i) => i.marcado).length;
+  const passaFiltro = (i) => filtro === "todos" || (filtro === "marcados" ? i.marcado : !i.marcado);
+  const grupos = SECOES.map(([k, nome]) => [nome, c.itens.filter((i) => secaoDoItem(i) === k && passaFiltro(i)).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))]).filter(([, its]) => its.length);
+  const filtros = [["todos", "Todos", c.itens.length], ["faltam", "Desmarcados", c.itens.length - nMarcados], ["marcados", "Marcados", nMarcados]];
   const pagos = pagoPorItem(c.id);
   const linhasItem = linhasPorItem(c.id);
   const pagoGrupo = (its) => its.reduce((s, i) => s + (pagos.get(i.id) ?? 0), 0);
@@ -502,6 +506,8 @@ async function telaCompras(n) {
       <div class="celulas ${ocupado >= cap - 1 ? "lotado" : ""}" style="--n:${cap}" aria-hidden="true">${Array.from({ length: cap }, (_, i) => `<span class="${i < ocupado ? "cheia" : ""}"></span>`).join("")}</div>
       <span class="pequeno">${notaFreezer} Bases que o cardápio desta semana manda congelar, o que já vem congelado e o bacon do mês.</span></section>`
     : `<div class="caixa pequeno">Só o que dura o mês todo fora da geladeira. O bacon vem em cubos e ocupa 1 espaço no congelador até o fim do mês.</div>`}
+    <div class="segmentos" role="group" aria-label="Filtrar itens">${filtros.map(([k, nome, n]) => `<button type="button" data-acao="filtrarCarrinho" data-f="${k}" aria-pressed="${k === filtro}">${nome}<small>${pl(n, "item", "itens")}</small></button>`).join("")}</div>
+    ${grupos.length ? "" : `<p class="pequeno">${filtro === "marcados" ? "Nenhum item marcado ainda." : "Tudo marcado. Nada faltando nesta compra."}</p>`}
     ${grupos.map(([nomeSecao, its]) => `<section>
       <div class="secao-titulo"><h2 class="h3">${esc(nomeSecao)}</h2><span style="display:flex;flex-direction:column;align-items:flex-end"><span class="mono pequeno">${R(L.somaItens(its))}</span>${pagos.size && its.some((i) => pagos.has(i.id)) ? `<span class="mono" style="font-size:11px;color:var(--fg-mute)">pago ${R(pagoGrupo(its))}</span>` : ""}</span></div>
       <div>${its.map((i) => `<label class="check ${i.marcado ? "feito" : ""}">
@@ -524,6 +530,7 @@ async function telaCompras(n) {
   </div>
   <div class="rodape-fixo"><a class="botao" href="#escanear/${c.id}">${notasDaCompra(c.id).length ? "Adicionar outra nota" : "Escanear a nota desta compra"}</a></div>`;
 }
+acoes.filtrarCarrinho = (el) => { estado.filtroCarrinho = el.dataset.f; desenhar(); };
 acoes.irCompra = (el) => ir(`#compras/${el.dataset.n}`);
 /** Quanto cada item da compra custou nas notas salvas (soma das linhas ligadas a ele). */
 function pagoPorItem(compraId) {
