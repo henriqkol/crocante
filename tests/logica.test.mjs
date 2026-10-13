@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  refeicoesDoMomento, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -237,4 +237,12 @@ test("pratos guardados na geladeira e no congelador", () => {
   assert.equal(b.comidas, 3); assert.equal(b.comido_em, "2026-10-13"); assert.equal(b.comeu[1].porcoes, 1);
   const c = desfazerComida({ ...g, ...b });
   assert.deepEqual(c, { comidas: 2, comeu: a.comeu, comido_em: null });
+});
+
+test("refeição em destaque na tela Hoje", () => {
+  assert.deepEqual(refeicoesDoMomento("2026-10-13", 23), [{ data: "2026-10-13", ref: "jantar" }, { data: "2026-10-14", ref: "almoco" }]);
+  assert.deepEqual(refeicoesDoMomento("2026-10-14", 2), [{ data: "2026-10-14", ref: "almoco" }, { data: "2026-10-14", ref: "jantar" }]);
+  assert.deepEqual(refeicoesDoMomento("2026-10-14", 13), [{ data: "2026-10-14", ref: "almoco" }, { data: "2026-10-14", ref: "jantar" }]);
+  assert.deepEqual(refeicoesDoMomento("2026-10-14", 15), [{ data: "2026-10-14", ref: "jantar" }, { data: "2026-10-15", ref: "almoco" }]);
+  assert.equal(horaBrasilia(new Date("2026-10-14T05:00:00Z")), 2);
 });

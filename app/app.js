@@ -287,20 +287,23 @@ async function telaHoje() {
       <p class="lead">Monte o próximo mês: o cardápio volta para a semana 1 e as compras são geradas de novo com o orçamento da casa.</p>
       <a class="botao" href="#novo-plano">Montar o próximo mês</a></div>`;
   } else {
-    const jantar = pratoDo(h, "jantar"), almoco = pratoDo(h, "almoco");
-    const J = PRATOS[jantar?.prato], A = PRATOS[almoco?.prato];
+    // da meia-noite às 14h o almoço fica em destaque; depois, o jantar. Embaixo, a refeição seguinte.
+    const [agora, depois] = L.refeicoesDoMomento(h, L.horaBrasilia());
+    const P = PRATOS[pratoDo(agora.data, agora.ref)?.prato], D = PRATOS[pratoDo(depois.data, depois.ref)?.prato];
+    const ehAlmoco = agora.ref === "almoco";
+    const rotuloDepois = `${depois.data === h ? "HOJE" : "AMANHÃ"} · ${depois.ref === "almoco" ? "ALMOÇO" : "JANTAR"}`;
     const noite = L.lembretes(h, "noite", planoParaLogica());
     corpo = `<div class="cabeca"><div class="eyebrow">${esc(dataLonga(h))}</div>
-      <h1 class="h1">Hoje à noite tem <span class="destaque">${esc((J?.nome ?? "").toLowerCase())}</span></h1></div>
-      ${J ? `<section class="papel">
-        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="rotulo">JANTAR · PRATO ${J.id}</span><span class="rotulo vermelho">${esc(J.tempo.toUpperCase())}</span></div>
-        <h2 class="h2">${esc(J.nome)}</h2>
-        <p class="pequeno">${esc(J.resumo)}</p>
-        <div style="display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--line-paper);padding-top:12px"><span class="asterisco" aria-hidden="true">*</span><span style="font-size:14px"><b style="font-weight:600">Crocância:</b> ${esc(J.crocancia.toLowerCase())}</span></div>
-        <a class="botao escuro" href="#prato/${J.id}/${h}/jantar">Começar a cozinhar ↗</a>
+      <h1 class="h1">${ehAlmoco ? "Hoje no almoço tem" : "Hoje à noite tem"} <span class="destaque">${esc((P?.nome ?? "").toLowerCase())}</span></h1></div>
+      ${P ? `<section class="papel">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="rotulo">${ehAlmoco ? "ALMOÇO" : "JANTAR"} · PRATO ${P.id}</span><span class="rotulo vermelho">${esc(P.tempo.toUpperCase())}</span></div>
+        <h2 class="h2">${esc(P.nome)}</h2>
+        <p class="pequeno">${esc(P.resumo)}</p>
+        <div style="display:flex;gap:10px;align-items:flex-start;border-top:1px solid var(--line-paper);padding-top:12px"><span class="asterisco" aria-hidden="true">*</span><span style="font-size:14px"><b style="font-weight:600">Crocância:</b> ${esc(P.crocancia.toLowerCase())}</span></div>
+        <a class="botao escuro" href="#prato/${P.id}/${agora.data}/${agora.ref}">Começar a cozinhar ↗</a>
       </section>` : ""}
       <section class="lista">
-        ${A ? `<a class="linha" href="#prato/${A.id}/${h}/almoco"><span class="cresce"><span class="rotulo">ALMOÇO</span><span class="h3">${esc(A.nome)}</span></span><span class="valor">${esc(A.tempo)} ↗</span></a>` : ""}
+        ${D ? `<a class="linha" href="#prato/${D.id}/${depois.data}/${depois.ref}"><span class="cresce"><span class="rotulo">${rotuloDepois}</span><span class="h3">${esc(D.nome)}</span></span><span class="valor">${esc(D.tempo)} ↗</span></a>` : ""}
         ${noite.map((l) => `<div class="linha"><span class="ponto"></span><span class="cresce"><span class="rotulo">HOJE À NOITE · ${l.tipo === "desc" ? "DESCONGELAR" : l.tipo === "merc" ? "MERCADO AMANHÃ" : "PREPARO AMANHÃ"}</span><span class="pequeno">${esc(l.tipo === "desc" ? l.corpo : `${l.titulo}. ${l.corpo}`)}</span></span></div>`).join("")}
       </section>`;
   }

@@ -556,3 +556,15 @@ export function desfazerComida(g) {
   const comidas = Math.max(0, Number(g.comidas ?? 0) - Number(ultimo?.porcoes ?? 0));
   return { comidas, comeu, comido_em: null };
 }
+
+// ------------------------------------------------------------------ tela Hoje
+/**
+ * Qual refeição vai em destaque e qual vem logo depois, pela hora de Brasília.
+ * Da meia-noite às 14h: almoço de hoje em destaque e o jantar de hoje embaixo.
+ * Das 14h à meia-noite: jantar de hoje em destaque e o almoço de amanhã embaixo.
+ */
+export function refeicoesDoMomento(hoje, hora) {
+  return hora < 14
+    ? [{ data: hoje, ref: "almoco" }, { data: hoje, ref: "jantar" }]
+    : [{ data: hoje, ref: "jantar" }, { data: addDias(hoje, 1), ref: "almoco" }];
+}
