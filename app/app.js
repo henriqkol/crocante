@@ -1248,9 +1248,14 @@ async function moverItens(ids, paraId) {
   const para = compraPorId(paraId);
   const pares = ids.map((id) => itemPorId(id)).filter(([c, it]) => c && it && c.id !== para.id);
   if (!pares.length) return [];
-  const copias = pares.map(([, it]) => ({ compra_id: para.id, chave: it.chave, nome: it.nome, qtd: it.qtd, unidade: it.unidade, preco: it.preco, local: it.local, secao: it.secao ?? null, coringa: it.coringa, congela: it.congela, ordem: it.ordem }));
-  const novos = await q(sb.from("croc_itens").insert(copias).select());
-  await q(sb.from("croc_itens").update({ movido_para: para.id }).in("id", pares.map(([, it]) => it.id)));
+  // Primeiro marca o original como movido, só se ainda não foi (toque repetido, outro celular ou nova tentativa não
+  // duplicam); só os que mudaram agora ganham a cópia na outra lista.
+  const marcados = new Set((await q(sb.from("croc_itens").update({ movido_para: para.id }).in("id", pares.map(([, it]) => it.id)).is("movido_para", null).select("id"))).map((x) => x.id));
+  const aCopiar = pares.filter(([, it]) => marcados.has(it.id));
+  const copias = aCopiar.map(([, it]) => ({ compra_id: para.id, chave: it.chave, nome: it.nome, qtd: it.qtd, unidade: it.unidade, preco: it.preco, local: it.local, secao: it.secao ?? null, coringa: it.coringa, congela: it.congela, ordem: it.ordem }));
+  let novos = [];
+  try { novos = copias.length ? await q(sb.from("croc_itens").insert(copias).select()) : []; }
+  catch (e) { await sb.from("croc_itens").update({ movido_para: null }).in("id", [...marcados]); throw e; } // desfaz se a cópia falhar
   for (const n of novos) if (!para.itens.some((x) => x.id === n.id)) para.itens.push(n);
   for (const [c, it] of pares) {
     c.itens = c.itens.filter((x) => x.id !== it.id);
@@ -1287,13 +1292,19 @@ acoes.moverFaltaram = () => {
   const ids = (estado.moverFaltaram ?? []).filter((id) => itemPorId(id)[1]);
   if (ids.length) folhaDestino(ids, "nota");
 };
+let movendo = false;
 acoes.moverParaLista = async (el) => {
+  if (movendo) return; // um toque só: os outros esperam
+  movendo = true;
+  folha.querySelectorAll("[data-acao=moverParaLista]").forEach((b) => { b.disabled = true; });
+  el.querySelector(".rotulo")?.replaceChildren("MOVENDO…");
   try {
     const movidos = await moverItens(estado.moverIds ?? [], el.dataset.para);
     if (estado.moverOrigem === "nota" && estado.rascunho) { estado.rascunho.passados.push(...movidos.map((it) => it.id)); guardarRascunho(); }
     estado.moverIds = null;
     fecharFolha(); desenhar();
-  } catch (e) { avisar(e.message, true); }
+  } catch (e) { avisar(e.message, true); folha.querySelectorAll("[data-acao=moverParaLista]").forEach((b) => { b.disabled = false; }); }
+  finally { movendo = false; }
 };
 /** Grava o que a casa corrigiu ou confirmou à mão, para as próximas notas. */
 async function aprender(c, linhas) {
