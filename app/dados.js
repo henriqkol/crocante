@@ -9,7 +9,10 @@ export const RECEITAS = { "1": { "pre": ["Frango em cubos (250 g)", "Arroz"], "i
 
 export const CAT = { "frango": "Frango", "carne": "Carne moída", "linguiça": "Linguiça, salsicha e bacon", "ovo": "Ovo e presunto", "batata": "Batata", "massa": "Massa e pão" };
 
-export const CARDAPIO = [[[23, 14], [1, 18], [17, 24], [13, 22], [2, 25], [15, 11], [6, 27]], [[20, 26], [8, 29], [19, 5], [3, 21], [16, 30], [7, 10], [12, 28]], [[15, 19], [9, 18], [11, 25], [1, 24], [17, 26], [8, 30], [4, 2]], [[23, 11], [13, 22], [10, 5], [20, 14], [6, 29], [3, 16], [28, 21]]];
+// Cardápio de 4 semanas: [almoço, jantar] de domingo a sábado.
+// Almoço = prato substancial e nunca seco (com molho, caldo de feijão ou cremoso); jantar = lanche prático (REFEICAO_DO_PRATO).
+// Sem feijão tropeiro, bowl de carne moída, salsicha ao molho e arroz carreteiro (trocados por pratos com os mesmos ingredientes).
+export const CARDAPIO = [[[6, 11], [13, 18], [1, 24], [17, 22], [23, 14], [12, 2], [27, 25]], [[12, 5], [3, 30], [19, 8], [17, 14], [13, 18], [10, 24], [29, 25]], [[4, 11], [1, 30], [13, 18], [9, 24], [19, 8], [17, 2], [26, 25]], [[6, 22], [13, 14], [3, 5], [23, 18], [10, 30], [17, 24], [29, 11]]];
 
 export const USA = { "1": "frango em cubos e arroz", "2": "nuggets do freezer e arroz", "3": "filé empanado do freezer", "4": "frango desfiado", "5": "frango desfiado", "7": "frango em cubos e arroz", "8": "frango desfiado", "9": "frango desfiado e arroz", "10": "filé empanado do freezer e arroz", "11": "hambúrguer separado no domingo", "12": "carne moída", "13": "carne moída", "14": "carne moída", "15": "carne moída e arroz", "16": "carne moída e arroz", "17": "arroz e feijão", "20": "feijão e arroz", "21": "arroz", "23": "arroz e feijão", "28": "frango desfiado" };
 
@@ -27,3 +30,12 @@ export const DOCES = [{ "nome": "Mousse de maracujá", "tempo": "5 min + geladei
 
 export const DICAS = { "economia": ["Faça uma compra grande no início do mês e guarde a reserva para repor pão, leite e batata palha na metade do mês.", "Nuggets caseiros saem bem mais baratos: empane um lote no fim de semana e congele crus, separados numa assadeira; depois junte num saco.", "Divida o frango e a carne moída em porções de refeição, já temperados, e congele. Tire na véspera.", "Compare o preço por quilo na etiqueta, não o preço da embalagem. Marca própria de mercado costuma valer a pena em arroz, feijão, macarrão, açúcar e produtos de limpeza.", "Mussarela em bloco rende mais que fatiada: rale para gratinar, fatie para lanche.", "Batata palha caseira: batata crua ralada fina, lavada, bem seca no pano e frita em óleo quente aos poucos. Use quando a de pacote acabar."], "crocancia": ["Uma airfryer é o melhor investimento para vocês: batata pré-frita, nuggets, empanados e sobrecoxa ficam crocantes sem ninguém ficar no fogão. Se não tiverem, o forno a 220 °C faz o mesmo, só demora mais.", "Fritura e forno precisam de temperatura alta. Forno pré-aquecido a 220 °C e frigideira bem quente antes de pôr a comida.", "Seque bem o que vai dourar (batata, frango). Umidade é inimiga da crocância.", "Junte batata palha e farofa só na hora de comer, nunca antes, para não amolecer.", "Queijo direto na frigideira antiaderente, sem óleo, vira uma casquinha dura para pôr em cima de qualquer prato.", "Pão de forma amanhecido vira crouton: cubos com margarina no forno ou na frigideira.", "Os empanados congelados crus vão direto do freezer para a airfryer ou o forno, sem descongelar."], "variedade": ["Nos dias sem nenhuma vontade, valem PF de ovo frito, hot dog prensado, wrap ou bowl de carne moída: 10 minutos e uma frigideira.", "O mesmo ingrediente pode virar pratos bem diferentes: frango desfiado vira strogonoff, wrap, escondidinho, coxinha de travessa ou arroz de forno.", "Mude a textura antes de mudar a comida: o mesmo frango empanado em batata palha, em corn flakes ou em farinha de rosca muda bastante.", "Mude o molho: ketchup, barbecue, molho de queijo, maionese com ketchup ou strogonoff deixam a mesma base com outra cara.", "Se cozinhar uma quantidade grande, guarde metade sem molho e sem cobertura. No dia seguinte ela vira outro prato.", "Use a aba Monte seu prato quando nada do cardápio agradar no dia."] };
 
+
+/** Em que refeição cada prato entra no cardápio: "almoco" (substancial, com molho/caldo/cremoso), "jantar" (lanche prático)
+ * ou "fora" (a casa não gosta como refeição principal; continua nas receitas e no sorteio). */
+export const REFEICAO_DO_PRATO = {
+  1: "almoco", 3: "almoco", 4: "almoco", 6: "almoco", 7: "almoco", 9: "almoco", 10: "almoco", 12: "almoco", 13: "almoco",
+  17: "almoco", 19: "almoco", 23: "almoco", 26: "almoco", 27: "almoco", 28: "almoco", 29: "almoco",
+  2: "jantar", 5: "jantar", 8: "jantar", 11: "jantar", 14: "jantar", 18: "jantar", 22: "jantar", 24: "jantar", 25: "jantar", 30: "jantar",
+  15: "fora", 16: "fora", 20: "fora", 21: "fora",
+};

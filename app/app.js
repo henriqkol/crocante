@@ -3,7 +3,7 @@ import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { SUPABASE_URL, SUPABASE_ANON_KEY, FUNCAO, VERSAO, PUBLICACAO } from "./config.js";
 import { iniciarLeitor } from "./scanner.js";
 import * as L from "./logica.js";
-import { PRATOS, RECEITAS, PREPARO, COMO, SORTEIO, CAFE, LANCHE, DOCES, DICAS, TIPO, CAT } from "./dados.js";
+import { PRATOS, RECEITAS, PREPARO, COMO, SORTEIO, CAFE, LANCHE, DOCES, DICAS, TIPO, CAT, REFEICAO_DO_PRATO } from "./dados.js";
 import { LOCAIS, SECOES, secaoDoItem } from "./compras.js";
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -843,8 +843,8 @@ acoes.sortear = () => { SORTEIO.forEach((_, i) => { if (!estado.sorteio.lock[i])
 
 function telaPratos() {
   const f = estado.filtroPratos;
-  const filtros = [["todos", "Todos"], ["t:r", "Rápidos"], ["t:f", "Forno faz sozinho"], ["t:s", "Fim de semana"], ...Object.entries(CAT)];
-  const lista = PRATOS.filter((p) => p && (f === "todos" || (f.startsWith("t:") ? p.tipo === f.slice(2) : p.cat === f)));
+  const filtros = [["todos", "Todos"], ["r:almoco", "Almoço"], ["r:jantar", "Lanche da noite"], ["t:r", "Rápidos"], ["t:f", "Forno faz sozinho"], ["t:s", "Fim de semana"], ...Object.entries(CAT)];
+  const lista = PRATOS.filter((p) => p && (f === "todos" || (f.startsWith("r:") ? REFEICAO_DO_PRATO[p.id] === f.slice(2) : f.startsWith("t:") ? p.tipo === f.slice(2) : p.cat === f)));
   app.innerHTML = `${topo({ voltar: "#geladeira", titulo: "OS 30 PRATOS" })}<div class="conteudo">
     <p class="lead">Feitos só com o que está na lista. O tempo considera as bases do domingo prontas.</p>
     <div class="pilulas rolagem">${filtros.map(([k, n]) => `<button class="pilula" aria-pressed="${k === f}" data-acao="filtrarPratos" data-f="${k}">${esc(n)}</button>`).join("")}</div>

@@ -45,6 +45,7 @@ Nasceu do "Plano Crocante do Mês": 2 pessoas, R$ 1.600, sem legumes nem frutas,
 - A tela mostra congelador, geladeira, "Já comidos" dos últimos 30 dias e, abaixo, o sorteio e os links (30 pratos, café, doces, dicas).
 
 ## Regras do plano
+- Almoço = prato substancial e nunca seco (com molho, caldo de feijão ou cremoso); jantar = lanche prático. `REFEICAO_DO_PRATO` (dados.js) classifica os 30 pratos em almoco/jantar/fora; o `CARDAPIO` das 4 semanas segue isso (teste garante). Fora dos planos: feijão tropeiro, bowl de carne moída, salsicha ao molho e arroz carreteiro (seco). Em "Os 30 pratos" há filtros Almoço e Lanche da noite. As quantidades de compra do modelo (`SEMANA`) continuam as mesmas: as trocas usaram pratos com os mesmos ingredientes.
 - Tela Hoje (`refeicoesDoMomento`, hora de Brasília): da meia-noite às 14h o almoço de hoje fica no cartão em destaque e o jantar de hoje embaixo; das 14h à meia-noite, o jantar de hoje em destaque e o almoço de amanhã embaixo.
 - Pratos só mudam de dia dentro da mesma semana ("Mudar de dia" troca dois lugares do `croc_cardapio`), então as compras continuam cobertas.
 - Preparo de domingo calculado pelo cardápio real (`preparoDaSemana`): bases de cada prato vêm de `RECEITAS[id].pre` (`basesDoPrato`); cozidos: domingo fresco, até quarta geladeira, quinta–sábado congelador; bolinhas cruas até terça na geladeira; empanados sempre no congelador; sobrecoxa/linguiça vêm congeladas da compra. Descongelar = véspera do dia do prato. "Separe" e as levas continuam do plano original (os pratos da semana são os mesmos).

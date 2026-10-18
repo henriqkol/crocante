@@ -35,15 +35,15 @@ test("plano de 4 semanas para 2 pessoas fecha com o orçamento do plano original
   assert.deepEqual(totais.slice(1), [208.15, 161.15, 156.85, 164.85]);
   assert.equal(totais.reduce((a, b) => a + b, 0).toFixed(2), "1548.00");
   assert.equal(p.cardapio.length, 56);
-  assert.equal(p.cardapio[0].prato, 23);            // domingo da semana 1: PF de ovo frito
-  assert.equal(p.cardapio.find((c) => c.data === "2026-10-09" && c.refeicao === "jantar").prato, 11); // sexta: smash burger
+  assert.equal(p.cardapio[0].prato, 6);             // domingo da semana 1: sobrecoxa assada (almoço substancial)
+  assert.equal(p.cardapio.find((c) => c.data === "2026-10-09" && c.refeicao === "jantar").prato, 2); // sexta: nuggets caseiros (lanche)
   assert.throws(() => gerarPlano("2026-10-05"));
 });
 
 test("congelador por semana", () => {
   const p = gerarPlano(INICIO, 2);
   assert.deepEqual([1, 2, 3, 4].map((s) => congeladorDaSemana(s - 1, p.compras[s].itens)), [9, 7, 6, 8]); // sem cardápio: preparo original
-  assert.deepEqual([1, 2, 3, 4].map((s) => congeladorDaSemana(s - 1, p.compras[s].itens, p)), [9, 9, 8, 8]); // pelo cardápio
+  assert.deepEqual([1, 2, 3, 4].map((s) => congeladorDaSemana(s - 1, p.compras[s].itens, p)), [10, 5, 6, 8]); // pelo cardápio
   assert.equal(semanaDoDia(INICIO, "2026-10-09"), 0);
   assert.equal(semanaDoDia(INICIO, "2026-10-31"), 3);
   assert.equal(semanaDoDia(INICIO, "2026-11-01"), null);
@@ -102,18 +102,20 @@ test("casa a nota com a compra e compara", () => {
 test("lembretes", () => {
   const p = gerarPlano(INICIO, 2);
   const plano = { ...p, compras: p.compras.map((c, i) => ({ ...c, pago: i <= 1 ? 1 : null })) };
-  // sexta 09/10 à noite: descongelar sobrecoxa + mercado de amanhã (semana 2)
+  // quinta 08/10 à noite: descongelar a carne moída do escondidinho de sexta
+  const quinta = lembretes("2026-10-08", "noite", plano);
+  assert.deepEqual(quinta.map((l) => l.tipo), ["desc"]);
+  assert.match(quinta[0].corpo, /carne moída \(escondidinho de carne, almoço\)/);
+  // sexta 09/10 à noite: mercado de amanhã (semana 2)
   const sexta = lembretes("2026-10-09", "noite", plano);
-  assert.deepEqual(sexta.map((l) => l.tipo), ["desc", "merc"]);
-  assert.match(sexta[0].corpo, /sobrecoxa/);
-  assert.match(sexta[1].corpo, /Compra da semana 2: 14 itens/);
+  assert.ok(sexta.some((l) => l.tipo === "merc" && /Compra da semana 2: 14 itens/.test(l.corpo)));
   // sábado 10/10 à noite: preparo de domingo da semana 2
   const sab = lembretes("2026-10-10", "noite", plano);
   assert.ok(sab.some((l) => l.tipo === "prep" && /1h30/.test(l.titulo)));
   // sábado 10/10 à tarde: escanear a nota
   assert.equal(lembretes("2026-10-10", "tarde", plano)[0].tipo, "nota");
-  // jantar de sexta
-  assert.match(lembretes("2026-10-09", "jantar", plano)[0].titulo, /smash burger/);
+  // jantar de sexta: lanche
+  assert.match(lembretes("2026-10-09", "jantar", plano)[0].titulo, /nuggets caseiros/);
   // véspera do plano: compra do mês e da semana 1 no mesmo dia
   const vespera = lembretes("2026-10-02", "noite", p);
   assert.match(vespera.find((l) => l.tipo === "merc").corpo, /Compra do mês e da semana 1/);
@@ -133,19 +135,17 @@ test("bases dos pratos e onde elas esperam", () => {
 test("preparo segue o cardápio quando os pratos mudam de dia", () => {
   const p = gerarPlano(INICIO, 2);
   const antes = preparoDaSemana(p.inicio, 0, p.cardapio);
-  assert.ok(antes.frz.some((x) => /Bolinhas.*sexta/.test(x)));
-  // smash burger (sexta à noite) troca com o hot dog (segunda à noite)
+  assert.ok(!antes.frz.some((x) => /Bolinhas/.test(x))); // smash burger no domingo: bolinhas feitas na hora
+  // smash burger (domingo à noite) troca com os nuggets (sexta à noite)
   const card = p.cardapio.map((x) => ({ ...x }));
   const sexta = card.find((x) => x.data === "2026-10-09" && x.refeicao === "jantar");
-  const segunda = card.find((x) => x.data === "2026-10-05" && x.refeicao === "jantar");
-  [sexta.prato, segunda.prato] = [segunda.prato, sexta.prato];
+  const domingo = card.find((x) => x.data === "2026-10-04" && x.refeicao === "jantar");
+  [sexta.prato, domingo.prato] = [domingo.prato, sexta.prato];
   const depois = preparoDaSemana(p.inicio, 0, card);
-  assert.ok(depois.gel.some((x) => /Bolinhas.*segunda/.test(x)));
-  assert.ok(!depois.frz.some((x) => /Bolinhas/.test(x)));
-  assert.equal(depois.saquinhos, antes.saquinhos - 1);
-  assert.ok(depois.conf.some((x) => /^Smash burger com batata \(segunda\)/.test(x)));
-  // e o lembrete de quinta à noite não pede mais as bolinhas
-  assert.deepEqual(descongelarParaAmanha(p.inicio, "2026-10-08", card).flatMap((x) => x.bases).sort(), ["arroz", "carne moída"]);
+  assert.ok(depois.frz.some((x) => /Bolinhas.*sexta/.test(x)));
+  assert.ok(depois.conf.some((x) => /^Smash burger com batata \(sexta\)/.test(x)));
+  // e o lembrete de quinta à noite passa a pedir as bolinhas
+  assert.deepEqual(descongelarParaAmanha(p.inicio, "2026-10-08", card).flatMap((x) => x.bases).sort(), ["bolinhas de hambúrguer cruas", "carne moída"]);
 });
 
 test("aprendizado e sugestões na nota", () => {
@@ -294,4 +294,17 @@ test("nota do Crocante no Finanças", () => {
   // peito vira Carnes e frios; carne moída já era 3 mas marca a origem; ração (fora do plano) e sabão (escolha manual) ficam
   assert.deepEqual(mudar.map((m) => [m.id, m.categoria_id]).sort(), [[1, 3], [3, 3], [4, 3]]);
   assert.equal(categoriaDominante([{ categoria_id: 3, valor_total: 20 }, { categoria_id: 12, valor_total: 24.9 }, { categoria_id: 3, valor_total: 11 }]), 3);
+});
+
+test("cardápio: almoço substancial e jantar de lanche", async () => {
+  const { CARDAPIO, REFEICAO_DO_PRATO, PRATOS } = await import("../app/dados.js");
+  assert.equal(CARDAPIO.length, 4);
+  for (const semana of CARDAPIO) {
+    assert.equal(semana.length, 7);
+    for (const [almoco, jantar] of semana) {
+      assert.equal(REFEICAO_DO_PRATO[almoco], "almoco", `${PRATOS[almoco].nome} no almoço`);
+      assert.equal(REFEICAO_DO_PRATO[jantar], "jantar", `${PRATOS[jantar].nome} no jantar`);
+    }
+  }
+  for (let id = 1; id <= 30; id++) assert.ok(REFEICAO_DO_PRATO[id], `prato ${id} sem refeição`);
 });
