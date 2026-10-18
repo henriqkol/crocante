@@ -328,7 +328,7 @@ async function telaSemana(n) {
   const p = estado.plano, h = hoje();
   const atual = L.semanaDoDia(p.inicio, h);
   const w = Math.min(3, Math.max(0, Number(n) ? Number(n) - 1 : (atual ?? 0)));
-  const prep = PREPARO[w];
+  const prep = L.levasDaSemana(p.inicio, w, estado.cardapio); // levas e "separe" pelos pratos que estão no cardápio
   const compra = estado.compras.find((c) => c.tipo === "semana" && c.semana === w + 1);
   const domingo = L.addDias(p.inicio, w * 7);
   const congel = L.congeladorDaSemana(w, compra?.itens, planoParaLogica());
@@ -349,16 +349,17 @@ async function telaSemana(n) {
           <span class="cresce"><span class="rotulo">2 · PREPARO · DOM ${L.dataCurta(domingo)}</span><span style="font-weight:500">Bases da semana, os dois juntos · ver ▾</span></span>
           <span class="numero m vermelho">${esc(prep.tempo)}</span></summary>
         <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:10px;color:var(--on-paper)">
-          <p class="pequeno">Primeira leva (fogão e pressão)</p>
+          ${!prep.p1.length && !prep.p2.length ? `<p class="pequeno">Nenhuma base para preparar: os pratos desta semana são feitos na hora.</p>` : ""}
+          ${prep.p1.length ? `<p class="pequeno">Primeira leva (fogão e pressão)</p>` : ""}
           <ul class="simples">${prep.p1.map(([n, q, c]) => `<li><b style="font-weight:600">${esc(n)}:</b> ${esc(q)}<br><span class="pequeno">${esc(COMO[c] ?? "")}</span></li>`).join("")}</ul>
-          <p class="pequeno">Segunda leva</p>
+          ${prep.p2.length ? `<p class="pequeno">Segunda leva</p>` : ""}
           <ul class="simples">${prep.p2.map(([n, q, c]) => `<li><b style="font-weight:600">${esc(n)}:</b> ${esc(q)}<br><span class="pequeno">${esc(COMO[c] ?? "")}</span></li>`).join("")}</ul>
         </div>
       </details>
     </div>
     <details class="mais"><summary class="link-mono">O QUE SEPARAR, GUARDAR E DESCONGELAR ▾</summary>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
-        <p class="pequeno">Calculado pelo cardápio desta semana: se um prato muda de dia, a geladeira, o congelador e o descongelar mudam junto.</p>
+        <p class="pequeno">Calculado pelo cardápio desta semana: se um prato muda, as levas, o que separar, a geladeira, o congelador e o descongelar mudam junto.</p>
         ${bloco("SEPARE NO DOMINGO", prep.separe)}${bloco("USA NO PRÓPRIO DOMINGO (FAÇA ANTES DA REFEIÇÃO)", calc.fresco)}
         ${bloco("VAI PARA A GELADEIRA", calc.gel)}${bloco(`VAI PARA O CONGELADOR · ${calc.saquinhos} ${calc.saquinhos === 1 ? "SAQUINHO" : "SAQUINHOS"}`, calc.frz)}
         ${bloco("DESCONGELAR NA VÉSPERA", calc.desc.map((d) => `${d.quando}: ${d.o}`))}${bloco("CONFIRA QUE TEM EM CASA", calc.conf)}

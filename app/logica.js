@@ -200,6 +200,54 @@ export function preparoDaSemana(inicio, w, cardapio) {
   return { fresco, gel, frz, desc, conf, saquinhos, usos };
 }
 
+/**
+ * Levas do preparo de domingo e o que separar, calculados pelos pratos que estão no cardápio da semana.
+ * Por uso: arroz 1 xícara crua (2 quando a receita pede 2 porções), feijão 250 g, carne moída 200 g refogada,
+ * bolinhas 150 g crua, frango desfiado 250 g, frango em cubos 250 g, nuggets 300 g de peito, filés 300 g.
+ * Retorna {tempo, p1, p2, separe} no mesmo formato do PREPARO original ([nome, quantidade, chave do COMO]).
+ */
+export function levasDaSemana(inicio, w, cardapio) {
+  const usos = usosDaSemana(inicio, w, cardapio);
+  const de = (base) => usos.filter((u) => u.base === base);
+  const quando = (us) => lista([...new Set(us.map((u) => u.d))].sort((a, b) => a - b).map((d) => DIAS[d]));
+  const porcoesArroz = (u) => (RECEITAS[u.prato]?.pre ?? []).some((p) => /ARROZ.*2 PORC/.test(normalizar(p))) ? 2 : 1;
+  const nomePrato = (u) => PRATOS[u.prato].nome.toLowerCase();
+  const p1 = [], p2 = [], separe = [];
+  const arroz = de("arroz"), feijao = de("feijao"), carne = de("carne"), bolinhas = de("bolinhas");
+  const desf = de("desfiado"), cubos = de("cubos"), nuggets = de("nuggets"), files = de("files");
+  const xic = arroz.reduce((s, u) => s + porcoesArroz(u), 0);
+  if (xic) { p1.push(["Arroz", `${xic} ${xic === 1 ? "xícara" : "xícaras"} de arroz cru (${quando(arroz)})`, "arroz"]); separe.push(`${xic} ${xic === 1 ? "xícara" : "xícaras"} de arroz`); }
+  const gFeijao = 250 * feijao.length;
+  if (gFeijao) { p1.push(["Feijão", `${gFeijao} g (${quando(feijao)})`, "feijao"]); separe.push(`${gFeijao} g de feijão`); }
+  const gCarne = 200 * carne.length, gBol = 150 * bolinhas.length;
+  if (gCarne || gBol) {
+    const txt = [gCarne ? `${gCarne} g refogada (${quando(carne)})` : null,
+      gBol ? `${gCarne ? "Separe mais " : ""}${gBol} g crua e faça ${2 * bolinhas.length} bolinhas para o smash burger (${quando(bolinhas)})` : null].filter(Boolean).join(". ");
+    p1.push(["Carne moída", txt, "carne"]); separe.push(`${gCarne + gBol} g de carne moída`);
+  }
+  const gDesf = 250 * desf.length, gCubos = 250 * cubos.length;
+  if (gDesf) p2.push(["Frango desfiado", `${gDesf} g de peito na pressão, desfiado (${quando(desf)})`, "frango"]);
+  if (gCubos) p2.push(["Frango em cubos", `${gCubos} g de peito, dourado (${quando(cubos)})`, "cubos"]);
+  const gNug = 300 * nuggets.length;
+  if (gNug) p2.push(["Nuggets", `${gNug} g de peito em tiras, empanados em batata palha triturada com farinha de rosca (${quando(nuggets)})`, "empanar"]);
+  const fRosca = files.filter((u) => u.prato !== 10), fCorn = files.filter((u) => u.prato === 10);
+  if (files.length) p2.push(["Filés empanados", [fRosca.length ? `${300 * fRosca.length} g em farinha de rosca (${fRosca.map((u) => `${nomePrato(u)} de ${DIAS[u.d]}`).join(", ")})` : null,
+    fCorn.length ? `${300 * fCorn.length} g em corn flakes (${fCorn.map((u) => DIAS[u.d]).join(", ")})` : null].filter(Boolean).join(" e "), "empanar"]);
+  const gPeito = gDesf + gCubos + gNug + 300 * files.length;
+  if (gPeito) separe.push(`${gPeito >= 1000 ? `${(gPeito / 1000).toLocaleString("pt-BR")} kg` : `${gPeito} g`} de peito de frango`);
+  const gEmp = gNug + 300 * files.length;
+  if (gEmp) {
+    separe.push(`${gEmp / 300 + 1} ovos`);
+    const farinhas = [gNug ? `${nuggets.length} xícara${nuggets.length > 1 ? "s" : ""} de batata palha + ½ xícara de farinha de rosca` : null,
+      fRosca.length ? `${fRosca.length} xícara${fRosca.length > 1 ? "s" : ""} de farinha de rosca` : null, fCorn.length ? `${2 * fCorn.length} xícaras de corn flakes` : null].filter(Boolean);
+    separe.push(...farinhas, "½ xícara de farinha de trigo");
+  }
+  separe.push("Temperos e saquinhos para congelar");
+  const comps = p1.length + p2.length;
+  const tempo = comps === 0 ? "0" : comps <= 2 ? "45 min" : comps <= 4 ? "1h" : comps === 5 ? "1h15" : "1h30";
+  return { tempo, p1, p2, separe };
+}
+
 /** O que descongelar hoje à noite para os pratos de amanhã. */
 export function descongelarParaAmanha(inicio, hoje, cardapio) {
   const amanha = addDias(hoje, 1);

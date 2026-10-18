@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parearItensFinancas, categoriasParaFinancas, categoriaDominante, refeicoesDoMomento, medidaDoTexto, medidaDoItem, compraPorMedida, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  levasDaSemana, parearItensFinancas, categoriasParaFinancas, categoriaDominante, refeicoesDoMomento, medidaDoTexto, medidaDoItem, compraPorMedida, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -307,4 +307,19 @@ test("cardápio: almoço substancial e jantar de lanche", async () => {
     }
   }
   for (let id = 1; id <= 30; id++) assert.ok(REFEICAO_DO_PRATO[id], `prato ${id} sem refeição`);
+});
+
+test("levas do preparo seguem o cardápio da semana", () => {
+  const sem = [[15, 11], [13, 18], [6, 5], [3, 24], [17, 30], [1, 8], [9, 22]];
+  const card = [];
+  sem.forEach(([a, j], d) => { const data = addDias("2026-10-18", d); card.push({ data, refeicao: "almoco", prato: a }, { data, refeicao: "jantar", prato: j }); });
+  const l = levasDaSemana("2026-10-11", 1, card);
+  const q = (n) => [...l.p1, ...l.p2].find((x) => x[0] === n)?.[1];
+  assert.match(q("Arroz"), /^6 xícaras/);
+  assert.equal(q("Feijão"), "250 g (quinta)");
+  assert.match(q("Carne moída"), /^400 g refogada.*150 g crua/);
+  assert.match(q("Frango desfiado"), /^750 g/);
+  assert.match(q("Filés empanados"), /parmegiana de quarta/);
+  assert.ok(!JSON.stringify(l).includes("tropeiro"));
+  assert.ok(l.separe.includes("1,3 kg de peito de frango"));
 });
