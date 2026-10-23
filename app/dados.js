@@ -37,5 +37,16 @@ export const REFEICAO_DO_PRATO = {
   1: "almoco", 3: "almoco", 4: "almoco", 6: "almoco", 7: "almoco", 9: "almoco", 10: "almoco", 12: "almoco", 13: "almoco",
   17: "almoco", 19: "almoco", 23: "almoco", 26: "almoco", 27: "almoco", 28: "almoco", 29: "almoco",
   2: "jantar", 5: "jantar", 8: "jantar", 11: "jantar", 14: "jantar", 18: "jantar", 22: "jantar", 24: "jantar", 25: "jantar", 30: "jantar",
-  15: "fora", 16: "fora", 20: "fora", 21: "fora",
+  15: "fora", 16: "fora", 20: "fora", 21: "fora", 31: "jantar",
+};
+
+// Pratos que a casa acrescentou depois do plano original
+PRATOS.push({ id: 31, nome: "Pão com ovo", cat: "ovo", resumo: "Pão francês aberto e tostado na chapa com margarina, ovo frito de gema mole e queijo derretendo por cima.", crocancia: "Pão tostado na chapa + borda rendada do ovo", tipo: "r", tempo: "10 min" });
+RECEITAS[31] = {
+  pre: ["Nada"],
+  ing: ["4 pães franceses", "4 ovos", "4 fatias de mussarela (opcional)", "Margarina e sal"],
+  p: ["Abra os pães, passe margarina e toste na frigideira, com o lado cortado para baixo, até dourar.",
+    "Na mesma frigideira, com um fio de óleo bem quente, frite os ovos até a borda ficar rendada. Sal por cima.",
+    "Se quiser, ponha a mussarela sobre o ovo e tampe por 1 minuto para derreter.",
+    "Monte o ovo no pão e coma na hora."],
 };

@@ -316,7 +316,7 @@ async function telaHoje() {
       <a href="#compras/${prox ? indiceCompra(prox) : 1}"><span class="rotulo ${prox && prox.data <= L.addDias(h, 1) ? "alerta" : ""}">${proxTxt}</span><span class="numero">${prox ? R0(L.somaItens(prox.itens)) : "✓"}</span><span class="pequeno">${prox ? `${esc(nomeCompra(prox).toLowerCase())} · ${pl(prox.itens.length, "item", "itens")}` : "tudo comprado"}</span></a>
     </section>
     ${cartaoInstalar()}
-    <a class="contorno" href="#geladeira" style="text-decoration:none"><span class="rotulo">NADA AGRADA HOJE?</span><span>Veja o que já está pronto no congelador, sorteie uma combinação ou veja os 30 pratos ↗</span></a>
+    <a class="contorno" href="#geladeira" style="text-decoration:none"><span class="rotulo">NADA AGRADA HOJE?</span><span>Veja o que já está pronto no congelador, sorteie uma combinação ou veja os pratos ↗</span></a>
   </div>`;
 }
 function planoParaLogica() {
@@ -680,7 +680,7 @@ async function telaIdeias(sub) {
     <section class="papel"><span class="rotulo">HOJE VAI SER</span><p style="font-size:21px;line-height:1.3;font-weight:500;letter-spacing:-.02em">${esc(L.fraseSorteio(v))}</p></section>
     <button class="botao" data-acao="sortear">Sortear de novo</button>
     <section class="lista">
-      <a class="linha" href="#geladeira/pratos"><span class="cresce"><span class="h3">Os 30 pratos</span><span class="pequeno">Com receita, tempo e o que deixa crocante</span></span><span class="valor">↗</span></a>
+      <a class="linha" href="#geladeira/pratos"><span class="cresce"><span class="h3">Os pratos</span><span class="pequeno">Com receita, tempo e o que deixa crocante</span></span><span class="valor">↗</span></a>
       <a class="linha" href="#geladeira/cafe"><span class="cresce"><span class="h3">Café e lanches</span><span class="pequeno">Tudo em até 10 minutos</span></span><span class="valor">↗</span></a>
       <a class="linha" href="#geladeira/doces"><span class="cresce"><span class="h3">Doces</span><span class="pequeno">Sem fruta, com o que está na lista</span></span><span class="valor">↗</span></a>
       <a class="linha" href="#geladeira/dicas"><span class="cresce"><span class="h3">Dicas</span><span class="pequeno">Render o dinheiro, crocância e variedade</span></span><span class="valor">↗</span></a>
@@ -846,7 +846,7 @@ function telaPratos() {
   const f = estado.filtroPratos;
   const filtros = [["todos", "Todos"], ["r:almoco", "Almoço"], ["r:jantar", "Lanche da noite"], ["t:r", "Rápidos"], ["t:f", "Forno faz sozinho"], ["t:s", "Fim de semana"], ...Object.entries(CAT)];
   const lista = PRATOS.filter((p) => p && (f === "todos" || (f.startsWith("r:") ? REFEICAO_DO_PRATO[p.id] === f.slice(2) : f.startsWith("t:") ? p.tipo === f.slice(2) : p.cat === f)));
-  app.innerHTML = `${topo({ voltar: "#geladeira", titulo: "OS 30 PRATOS" })}<div class="conteudo">
+  app.innerHTML = `${topo({ voltar: "#geladeira", titulo: "OS PRATOS" })}<div class="conteudo">
     <p class="lead">Feitos só com o que está na lista. O tempo considera as bases do domingo prontas.</p>
     <div class="pilulas rolagem">${filtros.map(([k, n]) => `<button class="pilula" aria-pressed="${k === f}" data-acao="filtrarPratos" data-f="${k}">${esc(n)}</button>`).join("")}</div>
     <section class="lista">${lista.map((p) => `<a class="linha" href="#prato/${p.id}" style="align-items:flex-start">

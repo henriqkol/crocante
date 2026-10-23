@@ -306,7 +306,7 @@ test("cardápio: almoço substancial e jantar de lanche", async () => {
       assert.equal(REFEICAO_DO_PRATO[jantar], "jantar", `${PRATOS[jantar].nome} no jantar`);
     }
   }
-  for (let id = 1; id <= 30; id++) assert.ok(REFEICAO_DO_PRATO[id], `prato ${id} sem refeição`);
+  for (let id = 1; id < PRATOS.length; id++) assert.ok(REFEICAO_DO_PRATO[id], `prato ${id} sem refeição`);
 });
 
 test("levas do preparo seguem o cardápio da semana", () => {
