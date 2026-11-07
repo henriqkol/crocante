@@ -114,7 +114,8 @@ async function carregarTudo() {
   estado.config = cfg;
   const planos = await q(sb.from("croc_planos").select("*").order("inicio", { ascending: false }).limit(8));
   const h = hoje();
-  const atual = planos.find((p) => p.inicio <= h && h <= L.addDias(p.inicio, 27))
+  // o plano começa a valer no sábado da compra (véspera do primeiro domingo): os planos vêm do mais novo para o mais antigo
+  const atual = planos.find((p) => L.addDias(p.inicio, -1) <= h && h <= L.addDias(p.inicio, 27))
     ?? [...planos].filter((p) => p.inicio > h).sort((a, b) => a.inicio.localeCompare(b.inicio))[0]
     ?? planos[0] ?? null;
   estado.plano = atual;
