@@ -92,7 +92,7 @@ async function primeiraVez(casa: number, chave: string): Promise<boolean> {
 async function planoDaCasa(casa: number, hoje: string) {
   const planos = ok(await adm.from("croc_planos").select("id, inicio, orcamento").eq("casa_id", casa)
     .lte("inicio", L.addDias(hoje, 7)).gte("inicio", L.addDias(hoje, -27)).order("inicio", { ascending: false }).limit(2)) as any[];
-  const p = planos.find((x) => x.inicio <= hoje) ?? planos[0];
+  const p = planos.find((x) => x.inicio <= L.addDias(hoje, 1)) ?? planos[0]; // vale desde o sábado da compra
   if (!p) return null;
   const [compras, cardapio, notas] = await Promise.all([
     adm.from("croc_compras").select("id, tipo, semana, data, pago, croc_itens!croc_itens_compra_id_fkey(id, nome, qtd, preco, congela, movido_para)").eq("plano_id", p.id).then(ok) as Promise<any[]>,
