@@ -555,7 +555,7 @@ export function lembretes(hoje, momento, plano) {
     const ws = semanaDoDia(plano.inicio, amanha);
     if (ws != null && diaSemana(amanha) === 0) {
       const p = preparoDoPlano(plano.inicio, ws, plano.cardapio ?? []);
-      if (p.p1.length || p.p2.length) {
+      if ((p.p1.length || p.p2.length) && !p.leve) { // semana "leve" (marmitas já prontas) não tem preparo no domingo
         const feijao = [...p.p1, ...p.p2].some((x) => x[2] === "feijao");
         out.push({ tipo: "prep", tag: `prep-${amanha}`, titulo: `Amanhã: preparo de domingo (${p.tempo})`, corpo: `Separe ${p.separe.slice(0, 3).join(", ")}.${feijao ? " Deixe o feijão de molho hoje." : ""}`, url: "./#semana" });
       }
