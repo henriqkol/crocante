@@ -1,0 +1,21 @@
+{
+  "name": "Crocante",
+  "short_name": "Crocante",
+  "description": "Cardápio, compras por semana e orçamento da casa, com crocância em todo prato",
+  "lang": "pt-BR",
+  "start_url": "./#hoje",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "icons": [
+    { "src": "icons/crocante-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/crocante-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/crocante-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Compras", "url": "./#compras", "icons": [{ "src": "icons/crocante-192.png", "sizes": "192x192" }] },
+    { "name": "Escanear nota", "url": "./#escanear", "icons": [{ "src": "icons/crocante-192.png", "sizes": "192x192" }] }
+  ]
+}
