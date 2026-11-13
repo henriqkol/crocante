@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  levasDaSemana, parearItensFinancas, categoriasParaFinancas, categoriaDominante, refeicoesDoMomento, medidaDoTexto, medidaDoItem, compraPorMedida, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
+  preparoDoPlano, levasDaSemana, parearItensFinancas, categoriasParaFinancas, categoriaDominante, refeicoesDoMomento, medidaDoTexto, medidaDoItem, compraPorMedida, situacaoGuardado, comerGuardado, desfazerComida, quantidadeComprada, cnpjDaChave, cnpjTexto, rankingMercados, addDias, diaSemana, escalar, gerarPlano, semanaDoDia, congeladorDaSemana, resumoOrcamento,
   modeloDaDescricao, casarNota, compararNota, lembretes, somaItens, hojeBrasilia, horaBrasilia, proximoDomingo,
   preparoDaSemana, basesDoPrato, guardaDaBase, descongelarParaAmanha, chaveTexto, sugerirItens, destinoDoItem,
 } from "../app/logica.js";
@@ -111,7 +111,7 @@ test("lembretes", () => {
   assert.ok(sexta.some((l) => l.tipo === "merc" && /Compra da semana 2: 14 itens/.test(l.corpo)));
   // sábado 10/10 à noite: preparo de domingo da semana 2
   const sab = lembretes("2026-10-10", "noite", plano);
-  assert.ok(sab.some((l) => l.tipo === "prep" && /1h30/.test(l.titulo)));
+  assert.ok(sab.some((l) => l.tipo === "prep" && /1h15/.test(l.titulo) && /600 g de carne moída/.test(l.corpo))); // pelo cardápio
   // sábado 10/10 à tarde: escanear a nota
   assert.equal(lembretes("2026-10-10", "tarde", plano)[0].tipo, "nota");
   // jantar de sexta: lanche
@@ -322,4 +322,17 @@ test("levas do preparo seguem o cardápio da semana", () => {
   assert.match(q("Filés empanados"), /parmegiana de quarta/);
   assert.ok(!JSON.stringify(l).includes("tropeiro"));
   assert.ok(l.separe.includes("1,3 kg de peito de frango"));
+});
+
+test("plano com marmitas: preparo escrito pelo plano e descongelar a marmita na véspera", async () => {
+  const { CARDAPIO_15_11, PRATOS, REFEICAO_DO_PRATO } = await import("../app/dados.js");
+  const card = [];
+  CARDAPIO_15_11.forEach((sem, w) => sem.forEach(([a, j], d) => { const data = addDias("2026-11-15", 7 * w + d); card.push({ data, refeicao: "almoco", prato: a }, { data, refeicao: "jantar", prato: j }); }));
+  assert.equal(PRATOS[card[0].prato].nome, "Arroz, maionese e frango assado");
+  for (let id = 32; id <= 38; id++) assert.equal(REFEICAO_DO_PRATO[id], "almoco");
+  const p = preparoDoPlano("2026-11-15", 0, card);
+  assert.ok(p.doPlano); assert.match(p.tempo, /5h/); assert.ok(p.p2.some((x) => x[0] === "Lasanha"));
+  assert.equal(preparoDoPlano("2026-11-15", 2, card).doPlano, false); // semana 3: preparo curto calculado
+  // segunda 16/11 à noite: tirar a marmita de bolonhesa de terça
+  assert.ok(descongelarParaAmanha("2026-11-15", "2026-11-16", card).some((x) => x.prato === 32 && x.bases.includes("marmita")));
 });

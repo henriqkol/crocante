@@ -92,11 +92,14 @@ async function primeiraVez(casa: number, chave: string): Promise<boolean> {
 async function planoDaCasa(casa: number, hoje: string) {
   const planos = ok(await adm.from("croc_planos").select("id, inicio, orcamento").eq("casa_id", casa)
     .lte("inicio", L.addDias(hoje, 7)).gte("inicio", L.addDias(hoje, -27)).order("inicio", { ascending: false }).limit(2)) as any[];
-  const p = planos.find((x) => x.inicio <= L.addDias(hoje, 1)) ?? planos[0]; // vale desde o sábado da compra
+  const p = planos.find((x) => x.inicio <= L.addDias(hoje, 2)) ?? planos[0]; // vale desde a véspera da compra de sábado
   if (!p) return null;
   const [compras, cardapio, notas] = await Promise.all([
     adm.from("croc_compras").select("id, tipo, semana, data, pago, croc_itens!croc_itens_compra_id_fkey(id, nome, qtd, preco, congela, movido_para)").eq("plano_id", p.id).then(ok) as Promise<any[]>,
-    adm.from("croc_cardapio").select("data, refeicao, prato").eq("plano_id", p.id).then(ok) as Promise<any[]>,
+    adm.from("croc_cardapio").select("plano_id, data, refeicao, prato").in("plano_id", planos.filter((x) => x.id === p.id || x.inicio < p.inicio).map((x) => x.id))
+      .gte("data", L.addDias(p.inicio, -7)).then(ok)
+      // + sexta e sábado da virada, do plano anterior (só os dias antes do início deste)
+      .then((rs: any[]) => rs.filter((r) => r.plano_id === p.id || r.data < p.inicio)) as Promise<any[]>,
     adm.from("croc_notas").select("compra_id").eq("casa_id", casa).then(ok) as Promise<any[]>,
   ]);
   return {

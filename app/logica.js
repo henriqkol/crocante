@@ -1,5 +1,5 @@
 // Lógica pura do Crocante (sem tela, sem banco). Usada pelo app, pela função do servidor e pelos testes.
-import { CARDAPIO, PREPARO, PRATOS, RECEITAS } from "./dados.js";
+import { CARDAPIO, PREPARO, PRATOS, RECEITAS, PREPARO_DO_PLANO } from "./dados.js";
 import { MES, SEMANA, MEDIDA_DO_ITEM } from "./compras.js";
 
 // ------------------------------------------------------------------ datas (sempre "AAAA-MM-DD", meio-dia UTC)
@@ -106,13 +106,15 @@ export const BASES = {
   bolinhas: { nome: "bolinhas de hambúrguer cruas", tipo: "cru" },
   nuggets: { nome: "nuggets crus", tipo: "empanado" }, files: { nome: "filés empanados crus", tipo: "empanado" },
   sobrecoxa: { nome: "sobrecoxa", tipo: "comprado" }, linguica: { nome: "linguiça", tipo: "comprado" },
+  marmita: { nome: "marmita", tipo: "marmita" }, // pronta no dia de preparo e congelada; passa para a geladeira na véspera
 };
 /** Bases de um prato, lidas do "pronto do domingo" da receita (+ o que vem congelado da compra). */
 export function basesDoPrato(id) {
   const out = new Set();
   for (const p of RECEITAS[id]?.pre ?? []) {
     const n = normalizar(p);
-    if (/^ARROZ/.test(n)) out.add("arroz");
+    if (/^MARMITA|^LASANHA CRUA|BIFES TEMPERADOS/.test(n)) out.add("marmita");
+    else if (/^ARROZ/.test(n)) out.add("arroz");
     else if (/^FEIJAO/.test(n)) out.add("feijao");
     else if (/BOLINHAS/.test(n)) out.add("bolinhas");
     else if (/^CARNE MOIDA/.test(n)) out.add("carne");
@@ -136,6 +138,7 @@ export function guardaDaBase(base, d) {
   if (tipo === "empanado") return "congelador";
   if (tipo === "comprado") return "comprado";
   if (d === 0) return "fresco";
+  if (tipo === "marmita") return "congelador";
   if (tipo === "cru") return d <= 2 ? "geladeira" : "congelador";
   return d <= 3 ? "geladeira" : "congelador";
 }
@@ -246,6 +249,18 @@ export function levasDaSemana(inicio, w, cardapio) {
   const comps = p1.length + p2.length;
   const tempo = comps === 0 ? "0" : comps <= 2 ? "45 min" : comps <= 4 ? "1h" : comps === 5 ? "1h15" : "1h30";
   return { tempo, p1, p2, separe };
+}
+
+/**
+ * Preparo da semana para a tela e os lembretes: o que o plano escreveu (PREPARO_DO_PLANO, semanas de marmitas)
+ * ou, nas outras, o calculado pelo cardápio (levasDaSemana + preparoDaSemana).
+ * Retorna {tempo, p1, p2, separe, gel, frz, desc, conf, fresco, saquinhos, titulo?, dica?, gelTxt?, frzTxt?, doPlano}.
+ */
+export function preparoDoPlano(inicio, w, cardapio) {
+  const escrito = PREPARO_DO_PLANO[inicio]?.[w];
+  const calc = preparoDaSemana(inicio, w, cardapio);
+  if (escrito) return { ...calc, fresco: [], ...escrito, saquinhos: calc.saquinhos, doPlano: true };
+  return { ...calc, ...levasDaSemana(inicio, w, cardapio), doPlano: false };
 }
 
 /** O que descongelar hoje à noite para os pratos de amanhã. */
@@ -539,8 +554,11 @@ export function lembretes(hoje, momento, plano) {
     }
     const ws = semanaDoDia(plano.inicio, amanha);
     if (ws != null && diaSemana(amanha) === 0) {
-      const p = PREPARO[ws];
-      out.push({ tipo: "prep", tag: `prep-${amanha}`, titulo: `Amanhã: preparo de domingo (${p.tempo})`, corpo: `Separe ${p.separe.slice(0, 3).join(", ")}. Deixe o feijão de molho hoje.`, url: "./#semana" });
+      const p = preparoDoPlano(plano.inicio, ws, plano.cardapio ?? []);
+      if (p.p1.length || p.p2.length) {
+        const feijao = [...p.p1, ...p.p2].some((x) => x[2] === "feijao");
+        out.push({ tipo: "prep", tag: `prep-${amanha}`, titulo: `Amanhã: preparo de domingo (${p.tempo})`, corpo: `Separe ${p.separe.slice(0, 3).join(", ")}.${feijao ? " Deixe o feijão de molho hoje." : ""}`, url: "./#semana" });
+      }
     }
   } else if (momento === "tarde") {
     for (const c of plano.compras.filter((c) => c.data === hoje && c.pago == null && !(c.notas ?? 0))) {

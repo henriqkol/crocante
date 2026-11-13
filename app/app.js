@@ -114,8 +114,8 @@ async function carregarTudo() {
   estado.config = cfg;
   const planos = await q(sb.from("croc_planos").select("*").order("inicio", { ascending: false }).limit(8));
   const h = hoje();
-  // o plano começa a valer no sábado da compra (véspera do primeiro domingo): os planos vêm do mais novo para o mais antigo
-  const atual = planos.find((p) => L.addDias(p.inicio, -1) <= h && h <= L.addDias(p.inicio, 27))
+  // o plano novo aparece desde a sexta (véspera da compra de sábado): os planos vêm do mais novo para o mais antigo
+  const atual = planos.find((p) => L.addDias(p.inicio, -2) <= h && h <= L.addDias(p.inicio, 27))
     ?? [...planos].filter((p) => p.inicio > h).sort((a, b) => a.inicio.localeCompare(b.inicio))[0]
     ?? planos[0] ?? null;
   estado.plano = atual;
@@ -131,7 +131,10 @@ async function carregarTudo() {
   })
     .sort((a, b) => indiceCompra(a) - indiceCompra(b));
   estado.compras.forEach((c) => delete c.croc_itens);
-  estado.cardapio = cardapio;
+  // a semana anterior ao plano (sexta e sábado da virada) continua com as refeições do plano de antes
+  const anterior = planos.find((x) => x.inicio < atual.inicio);
+  const antes = anterior ? await q(sb.from("croc_cardapio").select("*").eq("plano_id", anterior.id).gte("data", L.addDias(atual.inicio, -7)).lt("data", atual.inicio)) : [];
+  estado.cardapio = [...antes, ...cardapio].sort((a, b) => a.data.localeCompare(b.data));
   const ids = estado.compras.map((c) => c.id);
   estado.notas = ids.length ? await q(sb.from("croc_notas").select("id, compra_id, chave, qr, financas_id, conta_no_plano, total, emitente, emissao, criado_em, criado_por, linhas").in("compra_id", ids).order("criado_em")) : [];
   const ap = await q(sb.from("croc_aprendizado").select("texto, destino"));
@@ -329,11 +332,11 @@ async function telaSemana(n) {
   const p = estado.plano, h = hoje();
   const atual = L.semanaDoDia(p.inicio, h);
   const w = Math.min(3, Math.max(0, Number(n) ? Number(n) - 1 : (atual ?? 0)));
-  const prep = L.levasDaSemana(p.inicio, w, estado.cardapio); // levas e "separe" pelos pratos que estão no cardápio
+  const prep = L.preparoDoPlano(p.inicio, w, estado.cardapio); // escrito pelo plano (marmitas) ou calculado pelo cardápio
   const compra = estado.compras.find((c) => c.tipo === "semana" && c.semana === w + 1);
   const domingo = L.addDias(p.inicio, w * 7);
   const congel = L.congeladorDaSemana(w, compra?.itens, planoParaLogica());
-  const calc = L.preparoDaSemana(p.inicio, w, estado.cardapio);
+  const calc = prep;
   const dias = Array.from({ length: 7 }, (_, d) => L.addDias(domingo, d));
   const bloco = (titulo, itens) => itens?.length ? `<div class="caixa"><span class="rotulo">${titulo}</span><ul class="simples">${itens.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
   app.innerHTML = `${topo()}<div class="conteudo">
@@ -347,7 +350,7 @@ async function telaSemana(n) {
         <span class="numero m vermelho">${compra.pago != null ? "✓" : R0(L.somaItens(compra.itens))}</span></a>` : ""}
       <details class="mais">
         <summary class="linha" style="padding:14px 16px;border:0;color:var(--on-paper)">
-          <span class="cresce"><span class="rotulo">2 · PREPARO · DOM ${L.dataCurta(domingo)}</span><span style="font-weight:500">Bases da semana, os dois juntos · ver ▾</span></span>
+          <span class="cresce"><span class="rotulo">2 · PREPARO · DOM ${L.dataCurta(domingo)}</span><span style="font-weight:500">${esc(prep.titulo ?? "Bases da semana, os dois juntos")} · ver ▾</span></span>
           <span class="numero m vermelho">${esc(prep.tempo)}</span></summary>
         <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:10px;color:var(--on-paper)">
           ${!prep.p1.length && !prep.p2.length ? `<p class="pequeno">Nenhuma base para preparar: os pratos desta semana são feitos na hora.</p>` : ""}
@@ -360,9 +363,10 @@ async function telaSemana(n) {
     </div>
     <details class="mais"><summary class="link-mono">O QUE SEPARAR, GUARDAR E DESCONGELAR ▾</summary>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
-        <p class="pequeno">Calculado pelo cardápio desta semana: se um prato muda, as levas, o que separar, a geladeira, o congelador e o descongelar mudam junto.</p>
+        <p class="pequeno">${prep.doPlano ? "Escrito pelo plano para esta semana de marmitas." : "Calculado pelo cardápio desta semana: se um prato muda, as levas, o que separar, a geladeira, o congelador e o descongelar mudam junto."}</p>
+        ${prep.dica ? `<p class="pequeno"><b style="font-weight:600">Dica:</b> ${esc(prep.dica)}</p>` : ""}
         ${bloco("SEPARE NO DOMINGO", prep.separe)}${bloco("USA NO PRÓPRIO DOMINGO (FAÇA ANTES DA REFEIÇÃO)", calc.fresco)}
-        ${bloco("VAI PARA A GELADEIRA", calc.gel)}${bloco(`VAI PARA O CONGELADOR · ${calc.saquinhos} ${calc.saquinhos === 1 ? "SAQUINHO" : "SAQUINHOS"}`, calc.frz)}
+        ${bloco(prep.gelTxt ? `VAI PARA A GELADEIRA · ${prep.gelTxt.toUpperCase()}` : "VAI PARA A GELADEIRA", calc.gel)}${bloco(prep.doPlano ? `VAI PARA O CONGELADOR${prep.frzTxt ? ` · ${prep.frzTxt.toUpperCase()}` : ""}` : `VAI PARA O CONGELADOR · ${calc.saquinhos} ${calc.saquinhos === 1 ? "SAQUINHO" : "SAQUINHOS"}`, calc.frz)}
         ${bloco("DESCONGELAR NA VÉSPERA", calc.desc.map((d) => `${d.quando}: ${d.o}`))}${bloco("CONFIRA QUE TEM EM CASA", calc.conf)}
       </div></details>
     <section class="lista">
